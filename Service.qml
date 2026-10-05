@@ -20,10 +20,18 @@ Item {
   readonly property string launcher: pluginDir + "/bin/koi-screensaver"
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")) + "/koi-screensaver"
 
-  // Omarchy's own "screensaver off" switch, and our note that we were the
-  // ones who flipped it, so removing the plugin only undoes what it did.
-  readonly property string omarchyOffFlag: home + "/.local/state/omarchy/toggles/screensaver-off"
-  readonly property string ownsFlagMark: stateDir + "/owns-screensaver-off"
+  // This instance's name for itself when it switches Omarchy's screensaver
+  // off, so a late release from an earlier instance (after a shell reload)
+  // can't undo this one's claim. The launcher keeps the bookkeeping.
+  readonly property string token: "s" + Date.now().toString(36) + Math.floor(Math.random() * 1e9).toString(36)
+  readonly property string togglesDir: home + "/.local/state/omarchy/toggles"
+
+  // Why the koi can't run here ("" when they can). While there is a reason,
+  // Omarchy's own screensaver stays on.
+  property string problem: ""
+  // Whether the plugin is the one holding Omarchy's screensaver off.
+  property bool holding: false
+  readonly property bool launching: launchProc.running
 
   // The settings live inline on the plugin's own entry in shell.json, as
   // Omarchy's storage rules ask, written through the shell facade the host
@@ -83,36 +91,69 @@ Item {
 
   // Follow the switch, whether it was flipped here or in shell.json.
   onOnIdleChanged: if (root.loaded) {
-    if (root.onIdle) claimOmarchyScreensaver()
-    else releaseOmarchyScreensaver()
+    if (!root.onIdle) launchProc.running = false
+    sync()
   }
 
-  // Switch Omarchy's own screensaver off, unless the user already had.
-  function claimOmarchyScreensaver() {
-    run(["bash", "-c", '[[ -f "$1" ]] || { mkdir -p "$(dirname "$1")" "$(dirname "$2")" && touch "$1" "$2"; }', "bash", root.omarchyOffFlag, root.ownsFlagMark])
+  // Bring Omarchy's switch in line with ours: the koi take over only when
+  // they can run here, and step aside if you switch Omarchy's back on.
+  function sync() {
+    if (!root.loaded) return
+    stateCall(root.onIdle ? "claim" : "release")
+    if (!root.onIdle) checkProc.running = true
   }
 
-  // Give it back, if it was us who switched it off.
-  function releaseOmarchyScreensaver() {
-    run(["bash", "-c", '[[ -f "$2" ]] && rm -f "$1" "$2"; true', "bash", root.omarchyOffFlag, root.ownsFlagMark])
+  // One call at a time, in order; only the latest wish waits its turn.
+  property var queue: []
+  function stateCall(action) {
+    root.queue = [action]
+    pump()
+  }
+  function pump() {
+    if (stateProc.running || root.queue.length === 0) return
+    stateProc.action = root.queue[0]
+    root.queue = []
+    stateProc.command = launcherCommand([stateProc.action, root.token])
+    stateProc.running = true
+  }
+  function stateResult(action, out) {
+    var lines = String(out || "").trim().split("\n")
+    var line = lines[lines.length - 1]
+    if (action === "release") { root.holding = false; return }
+    if (line === "owned") { root.holding = true; root.problem = "" }
+    else if (line === "user-off") { root.holding = false; root.problem = "" }
+    else if (line === "user-on") {
+      // You switched Omarchy's screensaver back on yourself.
+      root.holding = false
+      if (root.onIdle) saveSettings({ onIdle: false })
+    } else if (line.indexOf("problem: ") === 0) {
+      root.holding = false
+      root.problem = line.slice(9)
+    } else if (line !== "retired") retryTimer.restart()
   }
 
-  // Open the koi now; from idle, not while staying awake. Never over the
-  // lock screen.
+  function launcherCommand(args) {
+    return ["bash", "-lc", 'exec "$@"', "bash", root.launcher].concat(args)
+  }
+
+  // Open the koi now; from idle, not while staying awake. The launcher
+  // checks the lock screen before every window, and is stopped if the koi
+  // are switched off or the plugin unloads while it is still opening them.
   function start(fromIdle) {
     if (fromIdle && root.stayAwake) return "staying awake"
-    var script = '[[ $(omarchy-shell lock isLocked 2>/dev/null) == "true" ]] && exit 0\n'
-      + 'exec "$1"'
-    Quickshell.execDetached(["bash", "-lc", script, "bash", root.launcher])
-    return "started"
+    if (launchProc.running) return "already starting"
+    launchProc.running = true
+    return root.problem ? "can't run: " + root.problem : "starting"
   }
 
-  function run(argv) { Quickshell.execDetached(argv) }
-
   // Read the idle timeout and this plugin's own entry from shell.json.
+  // A file that can't be read or parsed (say, halfway through an edit)
+  // keeps the last good settings, and before the first good read nothing is
+  // taken over.
   function readConfig(text) {
-    var config = {}
-    try { config = JSON.parse(text || "{}") || {} } catch (e) { config = {} }
+    var config
+    try { config = JSON.parse(text) } catch (e) { return }
+    if (!config || typeof config !== "object" || Array.isArray(config)) return
     var n = Number(config.idle ? config.idle.screensaver : NaN)
     root.screensaverSeconds = isFinite(n) && n >= 0 ? Math.floor(n) : 150
 
@@ -132,8 +173,7 @@ Item {
 
     if (!root.loaded) {
       root.loaded = true
-      if (root.onIdle) claimOmarchyScreensaver()
-      else releaseOmarchyScreensaver()
+      sync()
     }
   }
 
@@ -145,6 +185,9 @@ Item {
       stayAwake: root.stayAwake,
       idle: idleMonitor.isIdle,
       timeout: idleMonitor.timeout,
+      holdingOmarchyOff: root.holding,
+      launching: root.launching,
+      problem: root.problem,
       launcher: root.launcher
     })
   }
@@ -165,7 +208,54 @@ Item {
     printErrors: false
     onFileChanged: reload()
     onLoaded: root.readConfig(text())
-    onLoadFailed: root.readConfig("")
+  }
+
+  // Omarchy's toggles: if you switch its screensaver back on while the koi
+  // hold it off, they step aside.
+  FileView {
+    id: togglesWatcher
+    path: root.togglesDir
+    watchChanges: true
+    printErrors: false
+    onFileChanged: if (root.onIdle) root.sync()
+  }
+
+  Process {
+    id: stateProc
+    property string action: ""
+    stdout: StdioCollector {
+      onStreamFinished: root.stateResult(stateProc.action, text)
+    }
+    onExited: {
+      togglesWatcher.reload()
+      Qt.callLater(root.pump)
+    }
+  }
+
+  Process {
+    id: checkProc
+    command: root.launcherCommand(["check"])
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var lines = String(text || "").trim().split("\n")
+        var line = lines[lines.length - 1]
+        root.problem = line === "ok" || line === "" ? "" : line
+      }
+    }
+  }
+
+  // The launcher, while it opens the koi. It says itself if they can't run.
+  Process {
+    id: launchProc
+    command: root.launcherCommand([])
+    onExited: function(code) { if (code !== 0 && code !== 143) root.sync() }
+  }
+
+  // The switch's lock was busy: try again shortly.
+  Timer {
+    id: retryTimer
+    interval: 3000
+    onTriggered: root.sync()
   }
 
   // Watch the directory, since the stay-awake file comes and goes.
@@ -192,7 +282,10 @@ Item {
   // hands the screensaver back to Omarchy; loading it again takes it back.
   Component.onCompleted: stayAwakeProbe.running = true
 
-  Component.onDestruction: if (root.onIdle) releaseOmarchyScreensaver()
+  Component.onDestruction: {
+    launchProc.running = false
+    Quickshell.execDetached(root.launcherCommand(["retire", root.token]))
+  }
 
   IpcHandler {
     target: "koi-screensaver"

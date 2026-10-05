@@ -182,8 +182,11 @@ func sextant(mask uint8) rune {
 // A nil prev entry (mask 255) forces a cell to be drawn.
 func frame(buf []byte, cur, prev []cell, cols int) []byte {
 	buf = append(buf, "\x1b[?2026h"...)
+	// The terminal's colours are unknown at the start of a frame; each is
+	// known only once this frame has set it (a blank cell sets only the
+	// background).
 	var fg, bg col8
-	styled := false
+	fgSet, bgSet := false, false
 	at := -1
 	for i, c := range cur {
 		if prev[i] == c {
@@ -197,15 +200,14 @@ func frame(buf []byte, cur, prev []cell, cols int) []byte {
 			buf = strconv.AppendInt(buf, int64(i%cols+1), 10)
 			buf = append(buf, 'H')
 		}
-		if !styled || c.bg != bg {
+		if !bgSet || c.bg != bg {
 			buf = appendColor(buf, "\x1b[48;2;", c.bg)
-			bg = c.bg
+			bg, bgSet = c.bg, true
 		}
-		if c.mask != 0 && (!styled || c.fg != fg) {
+		if c.mask != 0 && (!fgSet || c.fg != fg) {
 			buf = appendColor(buf, "\x1b[38;2;", c.fg)
-			fg = c.fg
+			fg, fgSet = c.fg, true
 		}
-		styled = true
 		buf = append(buf, string(sextant(c.mask))...)
 		at = i + 1
 		if at%cols == 0 {

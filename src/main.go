@@ -4,7 +4,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -38,9 +40,20 @@ func main() {
 	}
 
 	if *pngOut != "" {
-		var cols, rows, cw, ch int
-		fmt.Sscanf(*size, "%dx%d", &cols, &rows)
-		fmt.Sscanf(*cellPx, "%dx%d", &cw, &ch)
+		cols, rows, err1 := parseSize(*size, maxCols, maxRows)
+		cw, ch, err2 := parseSize(*cellPx, 64, 64)
+		err := errors.Join(err1, err2)
+		if err == nil {
+			err = checkGrid(cols, rows)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "koi-screensaver:", err)
+			os.Exit(2)
+		}
+		if math.IsNaN(*seconds) || *seconds < 0 || *seconds > 600 {
+			fmt.Fprintln(os.Stderr, "koi-screensaver: --seconds must be between 0 and 600")
+			os.Exit(2)
+		}
 		p := newPond(cols, rows, aspectOf(cw, ch), newPalette(themeColors()), *seed, *scene)
 		p.fade = 0
 		if *intro {
@@ -65,6 +78,34 @@ func main() {
 	}
 }
 
+// The largest pond it will draw: about 300 MB of buffers. A bigger terminal
+// needs a bigger font (KOI_SCREENSAVER_FONT_SIZE).
+const (
+	maxCols  = 3000
+	maxRows  = 1500
+	maxCells = 600_000
+)
+
+// parseSize reads "WxH", each a whole number from 1 up to the limits given.
+func parseSize(s string, maxW, maxH int) (int, int, error) {
+	var w, h int
+	var rest string
+	if n, _ := fmt.Sscanf(s, "%dx%d%s", &w, &h, &rest); n != 2 || w < 1 || h < 1 || w > maxW || h > maxH {
+		return 0, 0, fmt.Errorf("size %q: want WxH, at most %dx%d", s, maxW, maxH)
+	}
+	return w, h, nil
+}
+
+func checkGrid(cols, rows int) error {
+	if cols < 8 || rows < 4 {
+		return fmt.Errorf("terminal of %dx%d cells is too small", cols, rows)
+	}
+	if cols > maxCols || rows > maxRows || cols*rows > maxCells {
+		return fmt.Errorf("terminal of %dx%d cells is too large; use a bigger font (KOI_SCREENSAVER_FONT_SIZE)", cols, rows)
+	}
+	return nil
+}
+
 func aspectOf(cw, ch int) float64 {
 	if cw <= 0 || ch <= 0 {
 		return 1.45
@@ -75,6 +116,9 @@ func aspectOf(cw, ch int) float64 {
 var screensaverMode bool
 
 func run(screensaver, intro bool, scene string, fps float64, seed uint64) error {
+	if math.IsNaN(fps) || math.IsInf(fps, 0) {
+		fps = 15
+	}
 	fps = clamp(fps, 1, 60)
 	screensaverMode = screensaver
 	fd := int(os.Stdin.Fd())
@@ -97,14 +141,14 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		// Report every mouse movement, so a nudge wakes the screen.
 		setup += "\x1b[?1003h\x1b[?1006h"
 		teardown = "\x1b[?1003l\x1b[?1006l" + teardown
-		hypr("eval", "hl.config({ cursor = { invisible = true } })")
+		setCursorHidden(true)
 	}
 	out.WriteString(setup)
 	defer func() {
 		out.WriteString(teardown)
 		unix.IoctlSetTermios(fd, unix.TCSETS, old)
 		if screensaver {
-			hypr("eval", "hl.config({ cursor = { invisible = false } })")
+			setCursorHidden(false)
 			// Closing one screensaver closes them all, as Omarchy's does.
 			exec.Command("pkill", "-f", "["+screensaverClass[:1]+"]"+screensaverClass[1:]).Run()
 		}
@@ -156,6 +200,10 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		time.Sleep(20 * time.Millisecond)
 		cols, rows, cw, ch = winsize(fd)
 	}
+	if err := checkGrid(cols, rows); err != nil {
+		logf("quit: %v", err)
+		return err
+	}
 	pal := newPalette(themeColors())
 	p := newPond(cols, rows, aspectOf(cw, ch), pal, seed, scene)
 	p.fade = 0 // rise gently out of the background, over a few seconds
@@ -190,6 +238,10 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 			}
 			c, r, w, h := winsize(fd)
 			if c != cols || r != rows {
+				if err := checkGrid(c, r); err != nil {
+					logf("quit: %v", err)
+					return err
+				}
 				cols, rows = c, r
 				p = newPond(cols, rows, aspectOf(w, h), pal, seed+1, scene)
 				p.fade = 0
@@ -206,7 +258,10 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 			p.draw()
 			p.cells(cur)
 			buf = frame(buf[:0], cur, prev, cols)
-			out.Write(buf)
+			if _, err := out.Write(buf); err != nil {
+				logf("quit: terminal gone: %v", err)
+				return nil
+			}
 		}
 	}
 }
@@ -223,12 +278,25 @@ func winsize(fd int) (cols, rows, cw, ch int) {
 	return
 }
 
-func hypr(args ...string) {
-	exec.Command("hyprctl", args...).Run()
+// hypr runs hyprctl, giving up after two seconds rather than hang.
+func hypr(args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "hyprctl", args...).Run()
+}
+
+// setCursorHidden hides or shows the mouse pointer, as Omarchy's own
+// screensaver does, with the same fallback for older Hyprland.
+func setCursorHidden(hidden bool) {
+	if hypr("eval", fmt.Sprintf("hl.config({ cursor = { invisible = %t } })", hidden)) != nil {
+		hypr("keyword", "cursor:invisible", fmt.Sprint(hidden))
+	}
 }
 
 func screensaverFocused() bool {
-	b, err := exec.Command("hyprctl", "activewindow", "-j").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	b, err := exec.CommandContext(ctx, "hyprctl", "activewindow", "-j").Output()
 	if err != nil {
 		return true // without Hyprland, keep going
 	}
@@ -244,8 +312,12 @@ func screensaverFocused() bool {
 func logf(format string, args ...any) {
 	path := os.Getenv("KOI_SCREENSAVER_LOG")
 	if path == "" && screensaverMode {
-		home, _ := os.UserHomeDir()
-		path = home + "/.local/state/koi-screensaver.log"
+		state := os.Getenv("XDG_STATE_HOME")
+		if state == "" {
+			home, _ := os.UserHomeDir()
+			state = home + "/.local/state"
+		}
+		path = state + "/koi-screensaver.log"
 	}
 	if path == "" {
 		return

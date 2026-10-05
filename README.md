@@ -19,7 +19,9 @@ Pick one in the drawer; both open with the wordmark.
 omarchy plugin add https://github.com/ejuro/koi-screensaver.git --enable
 ```
 
-That's all. From then on the koi appear instead of Omarchy's screensaver whenever you've been idle long enough.
+Enabling the plugin turns on **Use as screensaver** by default and takes over Omarchy's visual screensaver when the launcher's prerequisites are available. Turn that switch off to use Koi only for manual previews.
+
+**Koi is a visual screensaver only; locking and authentication belong to Omarchy.** Installing Koi does not configure a lock timeout.
 
 ## Use
 
@@ -50,22 +52,29 @@ The idle timeout is Omarchy's own (`idle.screensaver`). A few environment variab
 
 ## How it fits in
 
-Omarchy stays in charge of idling. Your idle timeout (`idle.screensaver` in `shell.json`), stay-awake, video playback keeping the screen on, and locking all keep working as before. The plugin only swaps what appears:
+Koi uses Omarchy's `idle.screensaver` timeout and an inhibitor-aware idle monitor. It watches Omarchy's stay-awake indicator and opens one second after the stock screensaver timeout. Omarchy recognises the screensaver window class and remains responsible for the lock timer and session lock. The launcher checks lock state before each monitor and refuses to launch when that state is unknown.
 
-- While *Use as screensaver* is on, Omarchy's own screensaver is switched off, using Omarchy's own setting for that. Disabling or removing the plugin switches it back on. If you had already switched Omarchy's screensaver off yourself, it stays off.
-- The koi appear one second after Omarchy's screensaver would have, in a window Omarchy recognises as its screensaver. So the lock screen still follows on time, and closing it counts as you coming back.
+While **Use as screensaver** is on, Koi records ownership of Omarchy's `screensaver-off` flag. Normal disable/removal releases the flag only if the recorded instance and file identity still match; a flag the user created is preserved. Turning Omarchy's own screensaver back on while Koi owns the flag makes Koi step aside. The drawer and `omarchy-shell koi-screensaver status` report prerequisite problems.
+
+Cleanup is best effort: a shell crash, forced kill, or power loss can prevent the release handler from running. A later plugin load can take over its previous ownership record, but removing it while the shell is down does not execute cleanup. See recovery below. Disabling Koi stops a pending launcher; an already-open preview may still need dismissal. Slow terminal failures and unusual lock/monitor timing still need broader testing; do not treat a successful preview as proof of every idle-to-lock transition.
 
 ## What it runs and touches
 
-Like every Omarchy plugin it runs unsandboxed, as you. It never uses sudo or the network, and installs nothing outside its own folder.
+The plugin runs unsandboxed as your user. Its runtime code does not make network requests, collect telemetry, or invoke sudo/pkexec. Installation and updates use Git and may access the network; building can download the Go toolchain or dependencies when they are not already available.
 
-- **The plugin** (`Service.qml`, `Panel.qml`) runs the launcher when you're idle or ask for a preview, and writes its settings to its own entry in `shell.json`. While *Use as screensaver* is on, it sets Omarchy's own "screensaver off" switch (`~/.local/state/omarchy/toggles/screensaver-off`), and keeps a note that it did so in `~/.local/state/koi-screensaver/`, so it only ever undoes its own change.
-- **The launcher** (`bin/koi-screensaver`) opens your terminal fullscreen on each monitor through `hyprctl`, with Omarchy's screensaver window class, the same way Omarchy opens its own screensaver. It uses `jq`, `socat` and `xdg-terminal-exec`, which Omarchy already has.
-- **The screensaver** (`bin/koi-screensaver-<arch>`, built from [`src/`](src)) reads the theme's `colors.toml` and Omarchy's wordmark, hides the mouse pointer while it's up, and on closing closes every screensaver window, as Omarchy's does. It writes one line to `~/.local/state/koi-screensaver.log` each time it closes, saying only whether a key, the mouse or something else woke it.
+- **Settings:** its own inline entry in `~/.config/omarchy/shell.json`, written through the host's scoped settings API. The plugin also reads the idle timeout from this file.
+- **Plugin files:** normally `~/.config/omarchy/plugins/io.github.ejuro.koi-screensaver/`. There is no package installer or privileged install hook.
+- **Ownership records:** `${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/`, including `owns-screensaver-off` and a bounded `retired-tokens` list.
+- **Omarchy state:** `~/.local/state/omarchy/toggles/screensaver-off` is the stock switch Koi temporarily owns. Koi reads `~/.local/state/omarchy/indicators/stay-awake`. These host paths follow Omarchy rather than `XDG_STATE_HOME`.
+- **Runtime locks:** `koi-screensaver.state.lock` and `koi-screensaver.launch.lock` under `$XDG_RUNTIME_DIR` (the launcher currently falls back to `/tmp` if unset). A normal Omarchy desktop provides a private runtime directory. The lock files may remain after use; they contain no settings.
+- **Log:** `${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver.log`, or the path in `KOI_SCREENSAVER_LOG`. It records exit reasons and whether input was a key or mouse event, never the keys typed. It starts afresh on a subsequent write after exceeding about 64 KiB.
+- **Read-only inputs:** the current theme's `colors.toml` (or `KOI_SCREENSAVER_COLORS`), the user's branding text and Omarchy's fallback logo. The `--png` development option writes to the explicitly supplied output path.
+
+The launcher uses Bash, coreutils, util-linux (`flock`), procps (`pgrep`/`pkill`), `awk`, `grep`, `jq`, `socat`, `xdg-terminal-exec`, `hyprctl`, and Omarchy's shell/monitor/notification commands. These are available on the tested desktop. The renderer temporarily hides the compositor cursor; cleanup restores visibility and closes windows using Omarchy's screensaver command-line class convention. This process match can also close the stock screensaver. A forced kill can skip cursor restoration.
 
 ## Performance
 
-It only sends the parts of the screen that changed, and the frame rate is always a whole fraction of your monitor's refresh rate, so every frame lasts the same time and the koi move evenly. *Balanced* takes as many frames as fit under 18 a second (17.1 at 120 Hz, 18 at 144 Hz, 15 at 60 Hz); *Smooth* takes about 20 (20 at 60 and 120 Hz).
+It only sends the parts of the screen that changed. Without an explicit FPS override, the launcher chooses the frame rate as a whole fraction of your monitor's refresh rate, so every frame lasts the same time and the koi move evenly. *Balanced* takes as many frames as fit under 18 a second (17.1 at 120 Hz, 18 at 144 Hz, 15 at 60 Hz); *Smooth* takes about 20 (20 at 60 and 120 Hz).
 
 Measured on a 4K, 120 Hz screen with Ghostty, terminal included, against Omarchy's own screensaver on the same machine:
 
@@ -76,17 +85,19 @@ Measured on a 4K, 120 Hz screen with Ghostty, terminal included, against Omarchy
 | Pond, Balanced | 67% |
 | Either scene, Smooth | 70% |
 
-On Balanced, both scenes cost about the same as Omarchy's screensaver. A larger font (see below) or a lower frame rate (`KOI_SCREENSAVER_FPS`) makes them cheaper still. It runs only while it's on screen.
+On that machine, both scenes on Balanced cost about the same as Omarchy's screensaver. These are observations, not a CPU or battery-use guarantee on other systems. A larger font (see below) or a lower frame rate (`KOI_SCREENSAVER_FPS`) makes them cheaper still. It runs only while it's on screen.
 
 ## Requirements
 
-Omarchy with its shell, and Ghostty, Alacritty or foot as your terminal. kitty is supported too but hasn't been tested yet. Ready-built programs for x86_64 and aarch64 are included, so nothing has to be compiled.
+Requires Omarchy's Quickshell-based shell and a supported terminal. Live smoke-tested on 2026-10-05 with Omarchy **4.0.4-1**, Quickshell **0.3.1-1**, Hyprland **0.56.2-2**, Qt declarative **6.11.2-1**, and Ghostty **1.3.1-2**, on Linux x86_64 with one 3840×2160 monitor at 1.25 scale. Checks covered shell restart, service status, the drawer and a manual preview.
 
-The koi are drawn with Unicode sextant characters in a terminal at font size 4.5, which is much finer than Omarchy's screensaver uses. To change that, set `KOI_SCREENSAVER_FONT_SIZE` in your environment.
+Alacritty, foot and kitty have launcher support but were not live-tested in this release check. Ready-built Linux x86_64 and aarch64 binaries are included; aarch64 was cross-built, not runtime-tested. These are tested versions, not an established minimum-version guarantee. Multi-monitor and adverse idle/lock timing still need desktop coverage.
+
+The koi are drawn with Unicode sextant characters in a terminal at font size 4.5, which is much finer than Omarchy's screensaver uses. To change that, set `KOI_SCREENSAVER_FONT_SIZE` in your environment (3–30; invalid values fall back to 4.5).
 
 ## Building
 
-The screensaver itself is a small Go program in [`src/`](src), with no dependencies beyond `golang.org/x/sys`. `./build.sh` rebuilds both binaries in `bin/`, and the build is reproducible: with Go 1.27.1 it gives the shipped binaries byte for byte, so you can check them with `./build.sh && git diff --stat bin/`. To try it in any terminal, run `bin/koi-screensaver-x86_64`; any key quits. Add `-scene chase` for the koi chase, and `-intro=false` to skip the wordmark. `go test ./...` in `src/` checks that drawing only what changed matches drawing everything.
+The screensaver itself is a small Go program in [`src/`](src), with no dependencies beyond `golang.org/x/sys`. `./build.sh` rebuilds both binaries in `bin/`, and the build is reproducible: with Go 1.27.1 it gives the shipped binaries byte for byte, so you can check them with `./build.sh && git diff --stat bin/`. To try it in any terminal, run `bin/koi-screensaver-x86_64`; any key quits. Add `-scene chase` for the koi chase, and `-intro=false` to skip the wordmark. `go test ./...` in `src/` checks both drawing consistency and terminal color state. Run `bash tests/launcher.sh` for isolated launcher/ownership tests. Third-party license texts for Go and x/sys are included in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
 
 ## Update and remove
 
@@ -95,10 +106,33 @@ omarchy plugin update io.github.ejuro.koi-screensaver
 omarchy plugin remove io.github.ejuro.koi-screensaver
 ```
 
-Removing it takes its entry out of `shell.json` and switches Omarchy's own screensaver back on (unless you had switched it off yourself). The only things left are an empty `~/.local/state/koi-screensaver/` folder and the small log; delete them if you like:
+Normal removal takes the plugin entry out of `shell.json` and asks the loaded service to release its own stock-off flag. This requires a running shell and successful cleanup; it is not guaranteed after a crash or forced kill.
+
+If you added the optional menu override, remove the `system.screensaver` entry whose action is `omarchy-shell koi-screensaver start` from `~/.config/omarchy/extensions/omarchy-menu.jsonc`, or restore your previous entry. Keep other custom entries and valid JSONC punctuation. Plugin removal does not edit that menu file.
+
+### Recovery after a crash
+
+First stop using Koi (disable/remove it, or keep the shell stopped). Inspect `~/.local/state/omarchy/toggles/screensaver-off`. If the stock screensaver should be enabled and the flag is a leftover from Koi, remove it:
 
 ```sh
-rm -rf ~/.local/state/koi-screensaver ~/.local/state/koi-screensaver.log
+rm -f ~/.local/state/omarchy/toggles/screensaver-off
 ```
 
-MIT License.
+Leave it in place if you deliberately disabled the stock screensaver. Do not remove another active plugin's state. If a forced kill left the cursor hidden, restore it using the compositor's current API:
+
+```sh
+hyprctl eval 'hl.config({ cursor = { invisible = false } })' || hyprctl keyword cursor:invisible false
+```
+
+After disabling/removing Koi and recovering the intended stock setting, its ownership records and log can be deleted:
+
+```sh
+rm -rf -- "${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver"
+rm -f -- "${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver.log"
+```
+
+If `KOI_SCREENSAVER_LOG` was set, its custom log remains at that path. Runtime lock files need no manual cleanup and normally disappear with the login session; do not unlink locks while a launcher could still hold them.
+
+See [SECURITY.md](SECURITY.md) for the trust model, limitations and reporting guidance.
+
+MIT License. Bundled third-party components retain their own licenses; see [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).

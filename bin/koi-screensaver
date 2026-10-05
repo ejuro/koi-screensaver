@@ -1,39 +1,185 @@
 #!/bin/bash
 
-# Open the koi fullscreen on every monitor, the way
-# omarchy-launch-screensaver opens its text effects: the same window class, so
-# Omarchy's fullscreen rule, idle service and lock screen all treat it as the
-# screensaver.
+# The Koi Screensaver launcher.
+#
+#   koi-screensaver               open the koi fullscreen on every monitor
+#   koi-screensaver check         say whether they can run here ("ok", or why not)
+#   koi-screensaver claim TOKEN   switch Omarchy's own screensaver off for the koi
+#                                 (only if they can run here; prints the outcome)
+#   koi-screensaver release TOKEN give it back, if this plugin instance still holds it
+#   koi-screensaver retire TOKEN  release, for an instance going away: a claim
+#                                 of its still on its way afterwards is refused
+#
+# The koi open the way omarchy-launch-screensaver opens its text effects: with
+# the same window class, so Omarchy's fullscreen rule, idle service and lock
+# screen all treat them as the screensaver.
 
-# Use the program built for this machine, shipped next to this script.
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+STATE=${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver
+RUNTIME=${XDG_RUNTIME_DIR:-/tmp}
+CLASS=org.omarchy.screensaver
+
+# The program built for this machine, shipped next to this script.
 here=$(dirname "$(readlink -f "$0")")
 pond="$here/koi-screensaver-$(uname -m)"
-[[ -x $pond ]] || pond=$(command -v koi-screensaver) || {
-  omarchy-notification-send -g 󰈺 "Koi Screensaver has no build for $(uname -m)" 2>/dev/null
-  exit 1
+
+notify() { omarchy-notification-send -g 󰈺 "$1" 2>/dev/null; }
+
+# --- can it run here? --------------------------------------------------------
+
+problem() {
+  [[ -x $pond ]] || { echo "no build for $(uname -m)"; return; }
+  [[ -n $HYPRLAND_INSTANCE_SIGNATURE ]] || { echo "not running under Hyprland"; return; }
+  local cmd
+  for cmd in hyprctl jq socat xdg-terminal-exec; do
+    command -v "$cmd" >/dev/null || { echo "$cmd is missing"; return; }
+  done
+  case $(xdg-terminal-exec --print-id 2>/dev/null) in
+  *Alacritty* | *ghostty* | *foot* | *kitty*) ;;
+  *) echo "it needs Alacritty, Foot, Ghostty or Kitty as the terminal" ;;
+  esac
 }
 
+# --- taking over Omarchy's screensaver ---------------------------------------
+#
+# Omarchy has no way to swap in another screensaver, so the plugin switches
+# Omarchy's own off with its own switch (a flag file) while the koi are in use.
+# It notes that it did so, with a token for the plugin instance and the exact
+# flag file it made, so that:
+#   - a later instance (after a shell reload) takes the note over, and a late
+#     release from an earlier one can't undo it;
+#   - a flag you made yourself is never removed;
+#   - if you switch Omarchy's screensaver back on yourself, the koi step aside;
+#   - if the koi can't run here, Omarchy's screensaver is left (or put back) on.
+# Every change happens under one lock, one at a time, and isn't cut short by
+# the plugin being unloaded halfway.
+
+FLAG=$HOME/.local/state/omarchy/toggles/screensaver-off
+MARK=$STATE/owns-screensaver-off
+RETIRED=$STATE/retired-tokens
+
+# The flag file's inode, modification time to the nanosecond and creation
+# time: a flag removed and made again is a different one.
+flag_id() { stat -c '%i %.9Y %W' "$FLAG" 2>/dev/null; }
+
+with_state_lock() {
+  mkdir -p "$STATE" "$(dirname "$FLAG")"
+  exec {lock}>"$RUNTIME/koi-screensaver.state.lock"
+  flock -w 5 "$lock" || { echo "busy"; exit 1; }
+}
+
+# Gives the flag back if the plugin made it, whichever instance did.
+drop_ours() {
+  local mark_token mark_id
+  [[ -f $MARK ]] || return 0
+  read -r mark_token mark_id <"$MARK"
+  [[ -f $FLAG && $(flag_id) == "$mark_id" ]] && rm -f "$FLAG"
+  rm -f "$MARK"
+}
+
+# Prints "owned", "user-off" (you had switched it off yourself), "user-on"
+# (you switched it back on while the koi held it: they step aside),
+# "problem: WHY" (the koi can't run here, so Omarchy's stays on) or "retired".
+claim() {
+  local token=$1 mark_token mark_id why
+  with_state_lock
+  if grep -qxF -- "$token" "$RETIRED" 2>/dev/null; then
+    echo retired
+    return
+  fi
+  why=$(problem)
+  if [[ -n $why ]]; then
+    drop_ours
+    echo "problem: $why"
+    return
+  fi
+  if [[ -f $MARK ]]; then
+    read -r mark_token mark_id <"$MARK"
+    if [[ -f $FLAG && $(flag_id) == "$mark_id" ]]; then
+      printf '%s %s\n' "$token" "$mark_id" >"$MARK"
+      echo owned
+    elif [[ -f $FLAG ]]; then
+      rm -f "$MARK"
+      echo user-off
+    else
+      rm -f "$MARK"
+      echo user-on
+    fi
+  elif [[ -f $FLAG ]]; then
+    echo user-off
+  else
+    mkdir -p "$(dirname "$FLAG")"
+    : >"$FLAG"
+    printf '%s %s\n' "$token" "$(flag_id)" >"$MARK"
+    echo owned
+  fi
+}
+
+release() {
+  local token=$1 mark_token
+  with_state_lock
+  [[ -f $MARK ]] || return 0
+  read -r mark_token _ <"$MARK"
+  [[ $mark_token == "$token" ]] || return 0 # a newer instance holds it now
+  drop_ours
+}
+
+retire() {
+  release "$1"
+  { tail -n 15 "$RETIRED" 2>/dev/null; echo "$1"; } >"$RETIRED.new" && mv "$RETIRED.new" "$RETIRED"
+}
+
+case $1 in
+check)
+  why=$(problem)
+  echo "${why:-ok}"
+  [[ -z $why ]]
+  exit
+  ;;
+claim | release | retire)
+  [[ $2 =~ ^[A-Za-z0-9._-]{1,64}$ ]] || { echo "bad token"; exit 2; }
+  trap '' TERM HUP INT
+  "$1" "$2"
+  exit
+  ;;
+"") ;;
+*)
+  echo "usage: koi-screensaver [check | claim TOKEN | release TOKEN | retire TOKEN]" >&2
+  exit 2
+  ;;
+esac
+
+# --- opening the koi ---------------------------------------------------------
+
+why=$(problem)
+if [[ -n $why ]]; then
+  notify "Koi Screensaver can't run: $why"
+  exit 1
+fi
+
+# One launch at a time: a second start while the first is still opening
+# windows just leaves it to the first.
+exec {launch}>"$RUNTIME/koi-screensaver.launch.lock"
+flock -n "$launch" || exit 0
+
 # One screensaver at a time
-pgrep -f '[o]rg.omarchy.screensaver' >/dev/null && exit 0
+pgrep -f "[${CLASS:0:1}]${CLASS:1}" >/dev/null && exit 0
+
+locked() {
+  # Anything but a clear "false" counts as locked.
+  [[ $(timeout 2 omarchy-shell lock isLocked 2>/dev/null) != "false" ]]
+}
 
 focused=$(omarchy-hyprland-monitor-focused)
 terminal=$(xdg-terminal-exec --print-id)
 
-case $terminal in
-*Alacritty* | *ghostty* | *foot* | *kitty*) ;;
-*)
-  omarchy-notification-send -g 󰈺 "Koi Screensaver only runs in Alacritty, Foot, Ghostty, or Kitty" 2>/dev/null
-  exit 1
-  ;;
-esac
-
-OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
-
 # A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
-# their size on screen and are just drawn more smoothly. Only a number is
-# taken, since it ends up in a command for Hyprland.
+# their size on screen and are just drawn more smoothly. Only a number in a
+# sensible range is taken, since it ends up in a command for Hyprland.
 font=${KOI_SCREENSAVER_FONT_SIZE:-4.5}
-[[ $font =~ ^[0-9]{1,2}([.][0-9]{1,2})?$ ]] || font=4.5
+if ! [[ $font =~ ^[0-9]{1,2}([.][0-9]{1,2})?$ ]] || ! awk -v f="$font" 'BEGIN { exit !(f >= 3 && f <= 30) }'; then
+  font=4.5
+fi
 
 # The settings chosen in the bar drawer, from the plugin's own entry in
 # shell.json.
@@ -41,7 +187,7 @@ settings=$(jq -c --arg id io.github.ejuro.koi-screensaver '
   [(.bar.layout // {} | to_entries[] | .value[]?), (.plugins // [])[]]
   | map(select(type == "object" and .id == $id)) | .[0] // {}
 ' "$HOME/.config/omarchy/shell.json" 2>/dev/null)
-setting() { jq -r --arg k "$1" '.[$k] // empty' <<<"${settings:-{\}}" 2>/dev/null; }
+setting() { jq -r --arg k "$1" '.[$k] // empty' <<<"${settings:-"{}"}" 2>/dev/null; }
 
 # Which scene: the koi chase, or the pond. KOI_SCREENSAVER_SCENE overrides it.
 scene=${KOI_SCREENSAVER_SCENE:-$(setting scene)}
@@ -56,7 +202,7 @@ scene=${KOI_SCREENSAVER_SCENE:-$(setting scene)}
 motion=${KOI_SCREENSAVER_MOTION:-$(setting motion)}
 [[ $motion == smooth ]] || motion=balanced
 fps_for() {
-  if [[ $KOI_SCREENSAVER_FPS =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  if [[ $KOI_SCREENSAVER_FPS =~ ^[0-9]{1,2}([.][0-9]{1,4})?$ ]]; then
     echo "$KOI_SCREENSAVER_FPS"
     return
   fi
@@ -85,37 +231,95 @@ hypr_exec() {
 }
 
 # Listen for the new window before opening it, so a fast terminal can't map
-# before we're watching.
-SOCKET="$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
-exec {events}< <(socat -U - "UNIX-CONNECT:$SOCKET" 2>/dev/null)
+# before we're watching. The listener must not hold the launch lock, and goes
+# when the launcher does.
+SOCKET="$RUNTIME/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+exec {events}< <(exec {launch}>&-; exec socat -U - "UNIX-CONNECT:$SOCKET" 2>/dev/null)
+listener=$!
+trap 'kill "$listener" 2>/dev/null' EXIT
+trap 'exit 143' TERM HUP INT # stopped by the plugin: open no more
 
-wait_for_screensaver_window() {
-  local line deadline=$((SECONDS + 5))
-  while ((SECONDS < deadline)) && IFS= read -r -t $((deadline - SECONDS)) -u "$events" line; do
-    [[ $line == openwindow\>\>*,org.omarchy.screensaver,* ]] && return 0
+# Watches Hyprland's window events. Records the koi windows that open, and
+# notes when one of them closes again: you came back while the koi were still
+# opening on the other monitors.
+declare -A ours
+dismissed=0
+handle() {
+  case $1 in
+  openwindow\>\>*,"$CLASS",*)
+    local address=${1#openwindow>>}
+    ours[${address%%,*}]=1
+    return 0
+    ;;
+  closewindow\>\>*)
+    [[ -n ${ours[${1#closewindow>>}]} ]] && dismissed=1
+    ;;
+  esac
+  return 1
+}
+
+# Takes in whatever has happened so far, without waiting.
+catch_up() {
+  local line
+  while IFS= read -r -t 0.05 -u "$events" line; do
+    handle "$line"
   done
 }
 
+# Waits up to five seconds for the window just asked for.
+wait_for_window() {
+  local line deadline=$((SECONDS + 5))
+  while ((SECONDS < deadline)) && IFS= read -r -t $((deadline - SECONDS)) -u "$events" line; do
+    handle "$line" && return 0
+  done
+  return 1
+}
+
+opened=0 stopped=""
 for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
+  # Before each monitor: never over the lock screen, and not once you are
+  # back.
+  catch_up
+  if ((dismissed)); then
+    stopped=dismissed
+    break
+  fi
+  if locked; then
+    stopped=locked
+    break
+  fi
   hypr_focus_monitor "$m"
   fps=$(fps_for "$m")
 
   case $terminal in
   *Alacritty*)
-    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -o "font.size=$font" -e "$pond" --screensaver --scene "$scene" --fps "$fps"
+    hypr_exec alacritty --class="$CLASS" --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -o "font.size=$font" -e "$pond" --screensaver --scene "$scene" --fps "$fps"
     ;;
   *foot*)
-    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" --font="monospace:size=$font" -e "$pond" --screensaver --scene "$scene" --fps "$fps"
+    hypr_exec foot --app-id="$CLASS" --config="$OMARCHY_PATH/default/foot/screensaver.ini" --font="monospace:size=$font" -e "$pond" --screensaver --scene "$scene" --fps "$fps"
     ;;
   *kitty*)
-    hypr_exec kitty --class=org.omarchy.screensaver --override font_size=$font --override window_padding_width=0 -e "$pond" --screensaver --scene "$scene" --fps "$fps"
+    hypr_exec kitty --class="$CLASS" --override "font_size=$font" --override window_padding_width=0 -e "$pond" --screensaver --scene "$scene" --fps "$fps"
     ;;
   *ghostty*)
-    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size="$font" -e "$pond" --screensaver --scene "$scene" --fps "$fps"
+    hypr_exec ghostty --class="$CLASS" --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size="$font" -e "$pond" --screensaver --scene "$scene" --fps "$fps"
     ;;
   esac
 
-  wait_for_screensaver_window
+  # Stop opening more if this one never came up.
+  if ! wait_for_window; then
+    stopped=window
+    break
+  fi
+  opened=$((opened + 1))
 done
 
+# Dismissed while a window was on its way: it opened after you came back, so
+# close it again, as closing any one koi window closes them all.
+catch_up
+((dismissed)) && pkill -f "[${CLASS:0:1}]${CLASS:1}"
+
 hypr_focus_monitor "$focused"
+if ((opened == 0)) && [[ $stopped == window ]]; then
+  notify "Koi Screensaver couldn't open its window"
+fi

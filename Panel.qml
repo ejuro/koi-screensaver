@@ -44,7 +44,10 @@ Panel {
   }
 
   // The header's one-line status.
-  readonly property string statusText: !onIdle
+  readonly property string problem: svc && svc.problem ? String(svc.problem) : ""
+  readonly property string statusText: onIdle && problem
+    ? "Can't run: " + problem + " · Omarchy's screensaver in use"
+    : !onIdle
     ? "Off · Omarchy's screensaver in use"
     : stayAwake
       ? "On · paused while staying awake"
