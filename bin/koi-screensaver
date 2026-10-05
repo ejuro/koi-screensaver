@@ -34,7 +34,7 @@ problem() {
   for cmd in hyprctl jq socat xdg-terminal-exec; do
     command -v "$cmd" >/dev/null || { echo "$cmd is missing"; return; }
   done
-  case $(xdg-terminal-exec --print-id 2>/dev/null) in
+  case $(timeout -k 1 2 xdg-terminal-exec --print-id 2>/dev/null) in
   *Alacritty* | *ghostty* | *foot* | *kitty*) ;;
   *) echo "it needs Alacritty, Foot, Ghostty or Kitty as the terminal" ;;
   esac
@@ -63,8 +63,8 @@ RETIRED=$STATE/retired-tokens
 flag_id() { stat -c '%i %.9Y %W' "$FLAG" 2>/dev/null; }
 
 with_state_lock() {
-  mkdir -p "$STATE" "$(dirname "$FLAG")"
-  exec {lock}>"$RUNTIME/koi-screensaver.state.lock"
+  mkdir -p "$STATE" "$(dirname "$FLAG")" || exit 1
+  exec {lock}>"$RUNTIME/koi-screensaver.state.lock" || exit 1
   flock -w 5 "$lock" || { echo "busy"; exit 1; }
 }
 
@@ -73,7 +73,9 @@ drop_ours() {
   local mark_token mark_id
   [[ -f $MARK ]] || return 0
   read -r mark_token mark_id <"$MARK"
-  [[ -f $FLAG && $(flag_id) == "$mark_id" ]] && rm -f "$FLAG"
+  if [[ -f $FLAG && $(flag_id) == "$mark_id" ]]; then
+    rm -f "$FLAG" || return 1
+  fi
   rm -f "$MARK"
 }
 
@@ -82,35 +84,38 @@ drop_ours() {
 # "problem: WHY" (the koi can't run here, so Omarchy's stays on) or "retired".
 claim() {
   local token=$1 mark_token mark_id why
+  # Terminal discovery must not hold up another instance's release.
+  why=$(problem)
   with_state_lock
   if grep -qxF -- "$token" "$RETIRED" 2>/dev/null; then
     echo retired
     return
   fi
-  why=$(problem)
   if [[ -n $why ]]; then
-    drop_ours
+    drop_ours || return 1
     echo "problem: $why"
     return
   fi
   if [[ -f $MARK ]]; then
     read -r mark_token mark_id <"$MARK"
     if [[ -f $FLAG && $(flag_id) == "$mark_id" ]]; then
-      printf '%s %s\n' "$token" "$mark_id" >"$MARK"
+      printf '%s %s\n' "$token" "$mark_id" >"$MARK" || return 1
       echo owned
     elif [[ -f $FLAG ]]; then
-      rm -f "$MARK"
+      rm -f "$MARK" || return 1
       echo user-off
     else
-      rm -f "$MARK"
+      rm -f "$MARK" || return 1
       echo user-on
     fi
   elif [[ -f $FLAG ]]; then
     echo user-off
   else
-    mkdir -p "$(dirname "$FLAG")"
-    : >"$FLAG"
-    printf '%s %s\n' "$token" "$(flag_id)" >"$MARK"
+    : >"$FLAG" || return 1
+    if ! printf '%s %s\n' "$token" "$(flag_id)" >"$MARK"; then
+      rm -f "$FLAG"
+      return 1
+    fi
     echo owned
   fi
 }
@@ -118,14 +123,18 @@ claim() {
 release() {
   local token=$1 mark_token
   with_state_lock
-  [[ -f $MARK ]] || return 0
-  read -r mark_token _ <"$MARK"
-  [[ $mark_token == "$token" ]] || return 0 # a newer instance holds it now
-  drop_ours
+  if [[ -f $MARK ]]; then
+    read -r mark_token _ <"$MARK"
+    # A newer instance's claim is not ours to release.
+    if [[ $mark_token == "$token" ]]; then
+      drop_ours || return 1
+    fi
+  fi
+  echo released
 }
 
 retire() {
-  release "$1"
+  release "$1" || return 1
   { tail -n 15 "$RETIRED" 2>/dev/null; echo "$1"; } >"$RETIRED.new" && mv "$RETIRED.new" "$RETIRED"
 }
 
@@ -139,7 +148,11 @@ check)
 claim | release | retire)
   [[ $2 =~ ^[A-Za-z0-9._-]{1,64}$ ]] || { echo "bad token"; exit 2; }
   trap '' TERM HUP INT
-  "$1" "$2"
+  case $1 in
+  claim) claim "$2" ;;
+  release) release "$2" ;;
+  retire) retire "$2" ;;
+  esac
   exit
   ;;
 "") ;;
@@ -171,7 +184,7 @@ locked() {
 }
 
 focused=$(omarchy-hyprland-monitor-focused)
-terminal=$(xdg-terminal-exec --print-id)
+terminal=$(timeout -k 1 2 xdg-terminal-exec --print-id)
 
 # A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
 # their size on screen and are just drawn more smoothly. Only a number in a
@@ -320,6 +333,9 @@ catch_up
 ((dismissed)) && pkill -f "[${CLASS:0:1}]${CLASS:1}"
 
 hypr_focus_monitor "$focused"
-if ((opened == 0)) && [[ $stopped == window ]]; then
+if [[ $stopped == window ]] || { ((opened == 0)) && [[ -z $stopped ]]; }; then
   notify "Koi Screensaver couldn't open its window"
+  exit 1
 fi
+((opened > 0)) && echo opened
+exit 0

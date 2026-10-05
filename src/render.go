@@ -1,11 +1,7 @@
 package main
 
 import (
-	"image"
-	"image/color"
-	"image/png"
 	"math"
-	"os"
 	"runtime"
 	"strconv"
 	"sync"
@@ -225,31 +221,4 @@ func appendColor(buf []byte, lead string, c col8) []byte {
 	buf = append(buf, ';')
 	buf = strconv.AppendInt(buf, int64(c[2]), 10)
 	return append(buf, 'm')
-}
-
-// writePNG draws cells the way a terminal would, cw by ch pixels each.
-func writePNG(path string, cells []cell, cols, rows, cw, ch int) error {
-	img := image.NewRGBA(image.Rect(0, 0, cols*cw, rows*ch))
-	for r := range rows {
-		for c := range cols {
-			cl := cells[r*cols+c]
-			for y := range ch {
-				sy := min(2, y*3/ch)
-				for x := range cw {
-					sx := min(1, x*2/cw)
-					v := cl.bg
-					if cl.mask&(1<<(sy*2+sx)) != 0 {
-						v = cl.fg
-					}
-					img.SetRGBA(c*cw+x, r*ch+y, color.RGBA{v[0], v[1], v[2], 255})
-				}
-			}
-		}
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return png.Encode(f, img)
 }

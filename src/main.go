@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -28,10 +27,6 @@ func main() {
 	screensaver := flag.Bool("screensaver", false, "run as the Omarchy screensaver: hide the cursor, wake on mouse, close every screensaver window on exit")
 	fps := flag.Float64("fps", 15, "frames per second; a whole fraction of the screen's refresh rate keeps the motion even")
 	seed := flag.Uint64("seed", uint64(time.Now().UnixNano()), "random seed")
-	pngOut := flag.String("png", "", "render a preview to this PNG instead of running")
-	seconds := flag.Float64("seconds", 20, "preview: seconds to simulate first")
-	size := flag.String("size", "279x72", "preview: terminal size in cells")
-	cellPx := flag.String("cell", "11x24", "preview: cell size in pixels")
 	intro := flag.Bool("intro", true, "open with the Omarchy wordmark turning into the koi")
 	scene := flag.String("scene", scenePond, "what to show: pond (koi drifting under lily pads) or chase (two koi circling a lily pad)")
 	flag.Parse()
@@ -39,39 +34,6 @@ func main() {
 		*scene = scenePond
 	}
 
-	if *pngOut != "" {
-		cols, rows, err1 := parseSize(*size, maxCols, maxRows)
-		cw, ch, err2 := parseSize(*cellPx, 64, 64)
-		err := errors.Join(err1, err2)
-		if err == nil {
-			err = checkGrid(cols, rows)
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "koi-screensaver:", err)
-			os.Exit(2)
-		}
-		if math.IsNaN(*seconds) || *seconds < 0 || *seconds > 600 {
-			fmt.Fprintln(os.Stderr, "koi-screensaver: --seconds must be between 0 and 600")
-			os.Exit(2)
-		}
-		p := newPond(cols, rows, aspectOf(cw, ch), newPalette(themeColors()), *seed, *scene)
-		p.fade = 0
-		if *intro {
-			p.startIntro()
-		}
-		for range int(*seconds * 30) {
-			p.fade = math.Min(1, p.fade+1.0/30/fadeSeconds)
-			p.step(1.0 / 30)
-		}
-		p.draw()
-		cells := make([]cell, cols*rows)
-		p.cells(cells)
-		if err := writePNG(*pngOut, cells, cols, rows, cw, ch); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
 	if err := run(*screensaver, *intro, *scene, *fps, *seed); err != nil {
 		fmt.Fprintln(os.Stderr, "koi-screensaver:", err)
 		os.Exit(1)
@@ -85,16 +47,6 @@ const (
 	maxRows  = 1500
 	maxCells = 600_000
 )
-
-// parseSize reads "WxH", each a whole number from 1 up to the limits given.
-func parseSize(s string, maxW, maxH int) (int, int, error) {
-	var w, h int
-	var rest string
-	if n, _ := fmt.Sscanf(s, "%dx%d%s", &w, &h, &rest); n != 2 || w < 1 || h < 1 || w > maxW || h > maxH {
-		return 0, 0, fmt.Errorf("size %q: want WxH, at most %dx%d", s, maxW, maxH)
-	}
-	return w, h, nil
-}
 
 func checkGrid(cols, rows int) error {
 	if cols < 8 || rows < 4 {
@@ -118,6 +70,8 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		fps = 15
 	}
 	fps = clamp(fps, 1, 60)
+	ctx, stopSignals := signal.NotifyContext(context.Background(), unix.SIGINT, unix.SIGTERM, unix.SIGHUP, unix.SIGQUIT)
+	defer stopSignals()
 	fd := int(os.Stdin.Fd())
 	old, err := unix.IoctlGetTermios(fd, unix.TCGETS)
 	if err != nil {
@@ -131,6 +85,8 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		return err
 	}
 
+	defer unix.IoctlSetTermios(fd, unix.TCSETS, old)
+
 	out := os.Stdout
 	setup := "\x1b[?1049h\x1b[?25l\x1b[2J"
 	teardown := "\x1b[0m\x1b[2J\x1b[?25h\x1b[?1049l"
@@ -138,18 +94,23 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		// Report every mouse movement, so a nudge wakes the screen.
 		setup += "\x1b[?1003h\x1b[?1006h"
 		teardown = "\x1b[?1003l\x1b[?1006l" + teardown
-		setCursorHidden(true)
 	}
-	out.WriteString(setup)
 	defer func() {
 		out.WriteString(teardown)
-		unix.IoctlSetTermios(fd, unix.TCSETS, old)
 		if screensaver {
-			setCursorHidden(false)
+			setCursorHidden(context.Background(), false)
 			// Closing one screensaver closes them all, as Omarchy's does.
 			exec.Command("pkill", "-f", "["+screensaverClass[:1]+"]"+screensaverClass[1:]).Run()
 		}
 	}()
+
+	if screensaver {
+		setCursorHidden(ctx, true)
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	out.WriteString(setup)
 
 	quit := make(chan struct{}, 1)
 	stop := func() {
@@ -159,7 +120,8 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		}
 	}
 	sig := make(chan os.Signal, 4)
-	signal.Notify(sig, unix.SIGINT, unix.SIGTERM, unix.SIGHUP, unix.SIGQUIT, unix.SIGWINCH)
+	signal.Notify(sig, unix.SIGWINCH)
+	defer signal.Stop(sig)
 
 	start := time.Now()
 	go func() {
@@ -192,8 +154,17 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 	// the window; wait a moment for that before laying out the pond.
 	cols, rows, cw, ch := winsize(fd)
 	for wait := time.Now(); cols == 80 && rows == 24 && time.Since(wait) < 2*time.Second; {
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-quit:
+			return nil
+		case <-time.After(20 * time.Millisecond):
+		}
 		cols, rows, cw, ch = winsize(fd)
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	if err := checkGrid(cols, rows); err != nil {
 		return err
@@ -224,10 +195,9 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		select {
 		case <-quit:
 			return nil
-		case s := <-sig:
-			if s != unix.SIGWINCH {
-				return nil
-			}
+		case <-ctx.Done():
+			return nil
+		case <-sig:
 			c, r, w, h := winsize(fd)
 			if c != cols || r != rows {
 				if err := checkGrid(c, r); err != nil {
@@ -269,17 +239,17 @@ func winsize(fd int) (cols, rows, cw, ch int) {
 }
 
 // hypr runs hyprctl, giving up after two seconds rather than hang.
-func hypr(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func hypr(parent context.Context, args ...string) error {
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 	return exec.CommandContext(ctx, "hyprctl", args...).Run()
 }
 
 // setCursorHidden hides or shows the mouse pointer, as Omarchy's own
 // screensaver does, with the same fallback for older Hyprland.
-func setCursorHidden(hidden bool) {
-	if hypr("eval", fmt.Sprintf("hl.config({ cursor = { invisible = %t } })", hidden)) != nil {
-		hypr("keyword", "cursor:invisible", fmt.Sprint(hidden))
+func setCursorHidden(ctx context.Context, hidden bool) {
+	if hypr(ctx, "eval", fmt.Sprintf("hl.config({ cursor = { invisible = %t } })", hidden)) != nil && ctx.Err() == nil {
+		hypr(ctx, "keyword", "cursor:invisible", fmt.Sprint(hidden))
 	}
 }
 

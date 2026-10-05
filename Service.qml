@@ -29,6 +29,7 @@ Item {
   // Why the koi can't run here ("" when they can). While there is a reason,
   // Omarchy's own screensaver stays on.
   property string problem: ""
+  property bool launchFailed: false
   // Whether the plugin is the one holding Omarchy's screensaver off.
   property bool holding: false
   readonly property bool launching: launchProc.running
@@ -73,7 +74,13 @@ Item {
   }
 
   function setOnIdle(value) {
+    var previous = root.onIdle
+    if (value && root.launchFailed) {
+      root.launchFailed = false
+      root.problem = ""
+    }
     saveSettings({ onIdle: !!value })
+    if (root.onIdle === previous) sync()
     return root.onIdle ? "on" : "off"
   }
 
@@ -91,6 +98,7 @@ Item {
 
   // Follow the switch, whether it was flipped here or in shell.json.
   onOnIdleChanged: if (root.loaded) {
+    if (root.onIdle) root.launchFailed = false
     if (!root.onIdle) launchProc.running = false
     sync()
   }
@@ -99,7 +107,7 @@ Item {
   // they can run here, and step aside if you switch Omarchy's back on.
   function sync() {
     if (!root.loaded) return
-    stateCall(root.onIdle ? "claim" : "release")
+    stateCall(root.onIdle && !root.launchFailed ? "claim" : "release")
     if (!root.onIdle) checkProc.running = true
   }
 
@@ -116,12 +124,17 @@ Item {
     stateProc.command = launcherCommand([stateProc.action, root.token])
     stateProc.running = true
   }
-  function stateResult(action, out) {
+  function stateResult(action, out, code) {
     var lines = String(out || "").trim().split("\n")
     var line = lines[lines.length - 1]
-    if (action === "release") { root.holding = false; return }
-    if (line === "owned") { root.holding = true; root.problem = "" }
-    else if (line === "user-off") { root.holding = false; root.problem = "" }
+    if (code !== 0) { retryTimer.restart(); return }
+    if (action === "release") {
+      if (line === "released") root.holding = false
+      else retryTimer.restart()
+      return
+    }
+    if (line === "owned") { root.holding = true; if (!root.launchFailed) root.problem = "" }
+    else if (line === "user-off") { root.holding = false; if (!root.launchFailed) root.problem = "" }
     else if (line === "user-on") {
       // You switched Omarchy's screensaver back on yourself.
       root.holding = false
@@ -194,7 +207,7 @@ Item {
 
   IdleMonitor {
     id: idleMonitor
-    enabled: root.loaded && root.onIdle && !root.stayAwake
+    enabled: root.loaded && root.onIdle && !root.stayAwake && !root.launchFailed
     // One second after Omarchy's, so its idle cycle has begun and is watching
     // for a screensaver window when the pond's appears.
     timeout: root.screensaverSeconds + 1
@@ -223,10 +236,9 @@ Item {
   Process {
     id: stateProc
     property string action: ""
-    stdout: StdioCollector {
-      onStreamFinished: root.stateResult(stateProc.action, text)
-    }
-    onExited: {
+    stdout: StdioCollector { id: stateOutput }
+    onExited: function(code) {
+      root.stateResult(stateProc.action, stateOutput.text, code)
       togglesWatcher.reload()
       Qt.callLater(root.pump)
     }
@@ -239,7 +251,7 @@ Item {
       onStreamFinished: {
         var lines = String(text || "").trim().split("\n")
         var line = lines[lines.length - 1]
-        root.problem = line === "ok" || line === "" ? "" : line
+        if (!root.launchFailed) root.problem = line === "ok" || line === "" ? "" : line
       }
     }
   }
@@ -248,7 +260,18 @@ Item {
   Process {
     id: launchProc
     command: root.launcherCommand([])
-    onExited: function(code) { if (code !== 0 && code !== 143) root.sync() }
+    stdout: StdioCollector { id: launchOutput }
+    onExited: function(code) {
+      if (code !== 0 && code !== 143) {
+        root.launchFailed = true
+        root.problem = "Couldn't open the screensaver. Preview to retry."
+        root.sync()
+      } else if (code === 0 && String(launchOutput.text).trim() === "opened" && root.launchFailed) {
+        root.launchFailed = false
+        root.problem = ""
+        root.sync()
+      }
+    }
   }
 
   // The switch's lock was busy: try again shortly.
