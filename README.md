@@ -26,11 +26,6 @@ Click the fish in the bar to enable or disable idle activation, choose a scene, 
 
 Koi follows Omarchy's idle timeout and stay-awake setting. Settings live in its entry in `~/.config/omarchy/shell.json`.
 
-```sh
-omarchy-shell koi-screensaver start    # Preview
-omarchy-shell koi-screensaver status   # Settings and launch problems
-```
-
 ## Update
 
 ```sh
