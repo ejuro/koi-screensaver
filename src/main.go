@@ -133,7 +133,7 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 			}
 			// Ignore what arrives while the window is still settling.
 			if n > 0 && time.Since(start) > 700*time.Millisecond {
-				stop(fmt.Sprintf("input %q", buf[:n]))
+				stop("input: " + inputKind(buf[:n]))
 				return
 			}
 		}
@@ -247,10 +247,25 @@ func logf(format string, args ...any) {
 		home, _ := os.UserHomeDir()
 		path = home + "/.local/state/koi-screensaver.log"
 	}
-	if path != "" {
-		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
-			fmt.Fprintf(f, time.Now().Format("15:04:05 ")+format+"\n", args...)
-			f.Close()
-		}
+	if path == "" {
+		return
 	}
+	// A line each time it closes; start afresh rather than grow for ever.
+	flags := os.O_APPEND | os.O_CREATE | os.O_WRONLY
+	if st, err := os.Stat(path); err == nil && st.Size() > 64<<10 {
+		flags |= os.O_TRUNC
+	}
+	if f, err := os.OpenFile(path, flags, 0o600); err == nil {
+		fmt.Fprintf(f, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+		f.Close()
+	}
+}
+
+// inputKind names what woke the screen, for the log, without the keys
+// themselves: someone waking it may already be typing their password.
+func inputKind(b []byte) string {
+	if len(b) >= 3 && b[0] == 0x1b && b[1] == '[' && (b[2] == '<' || b[2] == 'M') {
+		return "mouse"
+	}
+	return "key"
 }

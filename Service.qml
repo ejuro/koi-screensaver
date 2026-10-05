@@ -8,10 +8,10 @@ import Quickshell.Wayland
 // Omarchy's idle service stays in charge of everything else. It still decides
 // when the machine is idle, honours stay-awake and video inhibitors, locks on
 // time, and closes the screensaver when the lock screen comes up. This service
-// only switches Omarchy's own screensaver off while the plugin is installed,
-// and opens the pond a second after Omarchy would have opened its one. The pond
-// window carries Omarchy's screensaver class, so the idle service adopts it as
-// its own: dismissing the pond counts as activity, and the lock still follows.
+// only switches Omarchy's own screensaver off while the koi are in use, and
+// opens them a second after Omarchy would have opened its one. Their window
+// carries Omarchy's screensaver class, so the idle service adopts it as its
+// own: dismissing it counts as activity, and the lock still follows.
 Item {
   id: root
 
@@ -25,20 +25,26 @@ Item {
   readonly property string omarchyOffFlag: home + "/.local/state/omarchy/toggles/screensaver-off"
   readonly property string ownsFlagMark: stateDir + "/owns-screensaver-off"
 
-  // Whether the pond comes up by itself when idle; off leaves it to be opened
-  // by hand. Stored as the absence of `idle-off`.
-  property bool onIdle: true
+  // The settings live inline on the plugin's own entry in shell.json, as
+  // Omarchy's storage rules ask, written through the shell facade the host
+  // injects (scoped to this plugin's own entry). The launcher reads them from
+  // there too.
+  readonly property string pluginId: "io.github.ejuro.koi-screensaver"
+  property var shell: null
+  property var entry: ({})
   property bool loaded: false
 
-  // What the pond shows: "pond", koi drifting under lily pads, or "chase",
-  // two koi circling a lily pad. Kept in the state dir, where the launcher
-  // reads it.
-  property string scene: "pond"
+  // Whether the koi come out by themselves when idle; off leaves them to a
+  // preview by hand.
+  readonly property bool onIdle: root.entry.onIdle !== false
+
+  // What the koi do: "chase", two koi circling a lily pad, or "pond", koi
+  // drifting under lily pads.
+  readonly property string scene: root.entry.scene === "chase" ? "chase" : "pond"
 
   // How smoothly they swim: "balanced", as light as Omarchy's own
-  // screensaver, or "smooth", more frames for more CPU. Kept beside the
-  // scene, where the launcher reads it.
-  property string motion: "balanced"
+  // screensaver, or "smooth", more frames for more CPU.
+  readonly property string motion: root.entry.motion === "smooth" ? "smooth" : "balanced"
 
   // The same timeout as Omarchy's screensaver, read from its shell.json.
   property int screensaverSeconds: 150
@@ -48,28 +54,37 @@ Item {
   readonly property string indicatorsDir: home + "/.local/state/omarchy/indicators"
   property bool stayAwake: false
 
+  // Merge a change into the entry and write it back to shell.json.
+  function saveSettings(change) {
+    var next = {}
+    for (var k in root.entry) next[k] = root.entry[k]
+    for (var c in change) next[c] = change[c]
+    root.entry = next
+    if (root.shell && typeof root.shell.updateEntryInline === "function")
+      root.shell.updateEntryInline(root.pluginId, next)
+  }
+
   function setOnIdle(value) {
-    root.onIdle = !!value
-    run(["bash", "-c", root.onIdle ? 'rm -f "$1/idle-off"' : 'mkdir -p "$1" && touch "$1/idle-off"', "bash", root.stateDir])
-    if (root.onIdle) claimOmarchyScreensaver()
-    else releaseOmarchyScreensaver()
+    saveSettings({ onIdle: !!value })
     return root.onIdle ? "on" : "off"
   }
 
   function toggle() { return setOnIdle(!root.onIdle) }
 
   function setScene(value) {
-    var s = value === "chase" ? "chase" : "pond"
-    root.scene = s
-    run(["bash", "-c", 'mkdir -p "$1" && printf "%s\\n" "$2" > "$1/scene"', "bash", root.stateDir, s])
-    return s
+    saveSettings({ scene: value === "chase" ? "chase" : "pond" })
+    return root.scene
   }
 
   function setMotion(value) {
-    var m = value === "smooth" ? "smooth" : "balanced"
-    root.motion = m
-    run(["bash", "-c", 'mkdir -p "$1" && printf "%s\\n" "$2" > "$1/motion"', "bash", root.stateDir, m])
-    return m
+    saveSettings({ motion: value === "smooth" ? "smooth" : "balanced" })
+    return root.motion
+  }
+
+  // Follow the switch, whether it was flipped here or in shell.json.
+  onOnIdleChanged: if (root.loaded) {
+    if (root.onIdle) claimOmarchyScreensaver()
+    else releaseOmarchyScreensaver()
   }
 
   // Switch Omarchy's own screensaver off, unless the user already had.
@@ -82,7 +97,7 @@ Item {
     run(["bash", "-c", '[[ -f "$2" ]] && rm -f "$1" "$2"; true', "bash", root.omarchyOffFlag, root.ownsFlagMark])
   }
 
-  // Open the pond now; from idle, not while staying awake. Never over the
+  // Open the koi now; from idle, not while staying awake. Never over the
   // lock screen.
   function start(fromIdle) {
     if (fromIdle && root.stayAwake) return "staying awake"
@@ -94,12 +109,31 @@ Item {
 
   function run(argv) { Quickshell.execDetached(argv) }
 
-  function readIdleConfig(text) {
-    try {
-      var n = Number(JSON.parse(text || "{}").idle.screensaver)
-      root.screensaverSeconds = isFinite(n) && n >= 0 ? Math.floor(n) : 150
-    } catch (e) {
-      root.screensaverSeconds = 150
+  // Read the idle timeout and this plugin's own entry from shell.json.
+  function readConfig(text) {
+    var config = {}
+    try { config = JSON.parse(text || "{}") || {} } catch (e) { config = {} }
+    var n = Number(config.idle ? config.idle.screensaver : NaN)
+    root.screensaverSeconds = isFinite(n) && n >= 0 ? Math.floor(n) : 150
+
+    var found = null
+    var layout = config.bar && config.bar.layout ? config.bar.layout : {}
+    for (var section in layout) {
+      var items = Array.isArray(layout[section]) ? layout[section] : []
+      for (var i = 0; i < items.length && !found; i++)
+        if (items[i] && items[i].id === root.pluginId) found = items[i]
+    }
+    var plugins = Array.isArray(config.plugins) ? config.plugins : []
+    for (var j = 0; j < plugins.length && !found; j++)
+      if (plugins[j] && plugins[j].id === root.pluginId) found = plugins[j]
+    var next = {}
+    if (found) for (var k in found) if (k !== "id") next[k] = found[k]
+    root.entry = next
+
+    if (!root.loaded) {
+      root.loaded = true
+      if (root.onIdle) claimOmarchyScreensaver()
+      else releaseOmarchyScreensaver()
     }
   }
 
@@ -130,8 +164,8 @@ Item {
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
-    onLoaded: root.readIdleConfig(text())
-    onLoadFailed: root.readIdleConfig("")
+    onLoaded: root.readConfig(text())
+    onLoadFailed: root.readConfig("")
   }
 
   // Watch the directory, since the stay-awake file comes and goes.
@@ -152,25 +186,6 @@ Item {
       onRead: function(line) { root.stayAwake = String(line).trim() === "yes" }
     }
     onExited: indicatorsWatcher.reload()
-  }
-
-  FileView {
-    path: root.stateDir + "/scene"
-    printErrors: false
-    onLoaded: root.scene = text().trim() === "chase" ? "chase" : "pond"
-  }
-
-  FileView {
-    path: root.stateDir + "/motion"
-    printErrors: false
-    onLoaded: root.motion = text().trim() === "smooth" ? "smooth" : "balanced"
-  }
-
-  FileView {
-    path: root.stateDir + "/idle-off"
-    printErrors: false
-    onLoaded: { root.onIdle = false; root.loaded = true; root.releaseOmarchyScreensaver() }
-    onLoadFailed: { root.onIdle = true; root.loaded = true; root.claimOmarchyScreensaver() }
   }
 
   // Unloading the plugin (removing or disabling it, or the shell exiting)

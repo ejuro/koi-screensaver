@@ -27,6 +27,42 @@
       "idle"
     ],
     "allowMultiple": false,
-    "defaultSection": "right"
+    "defaultSection": "right",
+    "defaults": {
+      "onIdle": true,
+      "scene": "pond",
+      "motion": "balanced"
+    },
+    "schema": [
+      {
+        "key": "onIdle",
+        "type": "boolean",
+        "label": "Use as screensaver",
+        "description": "Show the koi instead of Omarchy's own screensaver when you're idle.",
+        "defaultValue": true
+      },
+      {
+        "key": "scene",
+        "type": "enum",
+        "label": "Scene",
+        "options": [
+          "chase",
+          "pond"
+        ],
+        "defaultValue": "pond",
+        "description": "chase: two koi circling a lily pad. pond: five koi drifting under lily pads."
+      },
+      {
+        "key": "motion",
+        "type": "enum",
+        "label": "Motion",
+        "options": [
+          "balanced",
+          "smooth"
+        ],
+        "defaultValue": "balanced",
+        "description": "balanced is as light as Omarchy's own screensaver; smooth shows more frames and uses more CPU."
+      }
+    ]
   }
 }

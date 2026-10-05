@@ -5,6 +5,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/src"
 for arch in amd64:x86_64 arm64:aarch64; do
-  CGO_ENABLED=0 GOOS=linux GOARCH=${arch%%:*} go build -trimpath -ldflags "-s -w" -o "../bin/koi-screensaver-${arch##*:}" .
+  CGO_ENABLED=0 GOOS=linux GOARCH=${arch%%:*} go build -trimpath -buildvcs=false -ldflags "-s -w" -o "../bin/koi-screensaver-${arch##*:}" .
 done
 ls -l ../bin

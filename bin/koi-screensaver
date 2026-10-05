@@ -27,13 +27,24 @@ case $terminal in
   ;;
 esac
 
-# A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
-# their size on screen and are just drawn more smoothly.
-font=${KOI_SCREENSAVER_FONT_SIZE:-4.5}
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
-# Which scene: the pond, or the koi chase. Chosen in the bar panel, which
-# keeps it in the plugin's state; KOI_SCREENSAVER_SCENE overrides it.
-scene=${KOI_SCREENSAVER_SCENE:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/scene" 2>/dev/null)}
+# A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
+# their size on screen and are just drawn more smoothly. Only a number is
+# taken, since it ends up in a command for Hyprland.
+font=${KOI_SCREENSAVER_FONT_SIZE:-4.5}
+[[ $font =~ ^[0-9]{1,2}([.][0-9]{1,2})?$ ]] || font=4.5
+
+# The settings chosen in the bar drawer, from the plugin's own entry in
+# shell.json.
+settings=$(jq -c --arg id io.github.ejuro.koi-screensaver '
+  [(.bar.layout // {} | to_entries[] | .value[]?), (.plugins // [])[]]
+  | map(select(type == "object" and .id == $id)) | .[0] // {}
+' "$HOME/.config/omarchy/shell.json" 2>/dev/null)
+setting() { jq -r --arg k "$1" '.[$k] // empty' <<<"${settings:-{\}}" 2>/dev/null; }
+
+# Which scene: the koi chase, or the pond. KOI_SCREENSAVER_SCENE overrides it.
+scene=${KOI_SCREENSAVER_SCENE:-$(setting scene)}
 [[ $scene == chase ]] || scene=pond
 
 # Frames per second, always a whole fraction of the monitor's refresh rate,
@@ -42,7 +53,7 @@ scene=${KOI_SCREENSAVER_SCENE:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/koi-
 # it no heavier than Omarchy's own screensaver (17.1 at 120 Hz, 15 at 60 Hz);
 # "smooth" takes about 20 (20 at 60 and 120 Hz), for more CPU. Chosen in the
 # bar drawer; KOI_SCREENSAVER_MOTION or KOI_SCREENSAVER_FPS override it.
-motion=${KOI_SCREENSAVER_MOTION:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/motion" 2>/dev/null)}
+motion=${KOI_SCREENSAVER_MOTION:-$(setting motion)}
 [[ $motion == smooth ]] || motion=balanced
 fps_for() {
   if [[ $KOI_SCREENSAVER_FPS =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -66,7 +77,11 @@ hypr_focus_monitor() {
 hypr_exec() {
   local command
   printf -v command '%q ' "$@"
-  hyprctl dispatch "hl.dsp.exec_cmd([[$command]])" >/dev/null 2>&1 || hyprctl dispatch exec -- "bash -lc $(printf %q "$command")" >/dev/null
+  # A ]] would end Hyprland's Lua string early; go the quoted way instead.
+  if [[ $command != *']]'* ]] && hyprctl dispatch "hl.dsp.exec_cmd([[$command]])" >/dev/null 2>&1; then
+    return
+  fi
+  hyprctl dispatch exec -- "bash -lc $(printf %q "$command")" >/dev/null
 }
 
 # Listen for the new window before opening it, so a fast terminal can't map
