@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# Open the koi pond fullscreen on every monitor, the way
+# omarchy-launch-screensaver opens its text effects: the same window class, so
+# Omarchy's fullscreen rule, idle service and lock screen all treat it as the
+# screensaver.
+
+# Use the program built for this machine, shipped next to this script.
+here=$(dirname "$(readlink -f "$0")")
+pond="$here/koi-pond-$(uname -m)"
+[[ -x $pond ]] || pond=$(command -v koi-pond) || {
+  omarchy-notification-send -g 󰈺 "Koi Pond has no build for $(uname -m)" 2>/dev/null
+  exit 1
+}
+
+# One screensaver at a time
+pgrep -f '[o]rg.omarchy.screensaver' >/dev/null && exit 0
+
+focused=$(omarchy-hyprland-monitor-focused)
+terminal=$(xdg-terminal-exec --print-id)
+
+# A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
+# their size on screen and are just drawn more smoothly.
+font=${KOI_POND_FONT_SIZE:-9}
+
+hypr_focus_monitor() {
+  hyprctl dispatch "hl.dsp.focus({ monitor = \"$1\" })" >/dev/null 2>&1 || hyprctl dispatch focusmonitor "$1" >/dev/null
+}
+
+hypr_exec() {
+  local command
+  printf -v command '%q ' "$@"
+  hyprctl dispatch "hl.dsp.exec_cmd([[$command]])" >/dev/null 2>&1 || hyprctl dispatch exec -- bash -lc "$command" >/dev/null
+}
+
+# Listen for the new window before opening it, so a fast terminal can't map
+# before we're watching.
+SOCKET="$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+exec {events}< <(socat -U - "UNIX-CONNECT:$SOCKET" 2>/dev/null)
+
+wait_for_screensaver_window() {
+  local line deadline=$((SECONDS + 5))
+  while ((SECONDS < deadline)) && IFS= read -r -t $((deadline - SECONDS)) -u "$events" line; do
+    [[ $line == openwindow\>\>*,org.omarchy.screensaver,* ]] && return 0
+  done
+}
+
+for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
+  hypr_focus_monitor "$m"
+
+  case $terminal in
+  *Alacritty*)
+    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -o "font.size=$font" -e "$pond" --screensaver
+    ;;
+  *foot*)
+    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" --font="monospace:size=$font" -e "$pond" --screensaver
+    ;;
+  *kitty*)
+    hypr_exec kitty --class=org.omarchy.screensaver --override font_size=$font --override window_padding_width=0 -e "$pond" --screensaver
+    ;;
+  *)
+    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size="$font" -e "$pond" --screensaver
+    ;;
+  esac
+
+  wait_for_screensaver_window
+done
+
+hypr_focus_monitor "$focused"
