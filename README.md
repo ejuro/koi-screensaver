@@ -31,12 +31,6 @@ omarchy-shell koi-screensaver start    # Preview
 omarchy-shell koi-screensaver status   # Settings and launch problems
 ```
 
-For the optional System → Screensaver menu shortcut, add this entry inside `~/.config/omarchy/extensions/omarchy-menu.jsonc`:
-
-```jsonc
-"system.screensaver": {"icon":"󱄄","label":"Screensaver","action":"omarchy-shell koi-screensaver start"},
-```
-
 ## Update
 
 ```sh
@@ -49,7 +43,7 @@ omarchy plugin update io.github.ejuro.koi-screensaver
 omarchy plugin remove io.github.ejuro.koi-screensaver
 ```
 
-Normal removal restores the stock screensaver if Koi disabled it. Remove the optional menu entry yourself. Ownership records remain in `${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/`; you can delete that folder after removal.
+Normal removal restores the stock screensaver if Koi disabled it. Ownership records remain in `${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/`; you can delete that folder after removal.
 
 After a crash, removal may leave the stock screensaver disabled. If you want it enabled, remove a leftover `~/.local/state/omarchy/toggles/screensaver-off`. Keep it if you deliberately disabled the stock saver. If the cursor remains hidden:
 
