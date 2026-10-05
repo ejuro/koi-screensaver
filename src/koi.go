@@ -53,6 +53,7 @@ type koi struct {
 	ease      float64 // 1 when swimming freely; less while it starts to
 	slot      float64 // the chase: its place on the circle, behind the leader
 	flick     float64 // the chase: seconds into a tail flick, 0 for none
+	shapeBuf  *koiShape
 }
 
 func (p *pond) newKoi(pat pattern) *koi {
@@ -173,74 +174,5 @@ func (p *pond) follow(k *koi) {
 		ang = back + clamp(angleTo(back, ang), -0.22, 0.22)
 		b.x, b.y = a.x+math.Cos(ang)*gap, a.y+math.Sin(ang)*gap
 		back = ang
-	}
-}
-
-// drawKoi draws a koi as discs along its spine, swaying its rear half with
-// its stroke. paint receives each disc in drawing order.
-func (p *pond) drawKoi(k *koi, paint func(cx, cy, r float64, t int8)) {
-	if k.grow <= 0 {
-		return
-	}
-	j := k.j
-	size := p.size * k.grow
-	pat := k.pat
-	for i := 4; i < joints; i++ {
-		a, b := k.j[i-1], k.j[i]
-		dx, dy := a.x-b.x, a.y-b.y
-		if d := math.Hypot(dx, dy); d > 0 {
-			f := float64(i-3) / (joints - 4)
-			off := math.Sin(k.phase-f*2.5) * f * f * k.stroke * 1.8 * size
-			j[i].x -= dy / d * off
-			j[i].y += dx / d * off
-		}
-	}
-
-	head := math.Atan2(j[0].y-j[2].y, j[0].x-j[2].x)
-	flap := math.Sin(k.phase*0.5) * 0.25
-	for _, side := range [2]float64{-1, 1} {
-		a := head + math.Pi + side*(1.25+flap)
-		for t := range 3 {
-			off := (radii[2] + 0.6 + float64(t)) * size
-			paint(j[2].x+math.Cos(a)*off, j[2].y+math.Sin(a)*off, (1.5-float64(t)*0.35)*size, pat.body)
-		}
-	}
-	back := math.Atan2(j[7].y-j[6].y, j[7].x-j[6].x)
-	for _, side := range [2]float64{-1, 1} {
-		a := back + side*1.9
-		paint(j[7].x+math.Cos(a)*1.6*size, j[7].y+math.Sin(a)*1.6*size, 0.8*size, pat.body)
-	}
-	last, before := j[joints-1], j[joints-2]
-	tail := math.Atan2(last.y-before.y, last.x-before.x) + math.Sin(k.phase-2)*0.6*k.stroke
-	paint(last.x+math.Cos(tail)*1.2*size, last.y+math.Sin(tail)*1.2*size, 0.75*size, pat.body)
-	paint(last.x+math.Cos(tail)*0.6*size, last.y+math.Sin(tail)*0.6*size, 0.65*size, pat.body)
-
-	for i := joints - 1; i >= 0; i-- {
-		paint(j[i].x, j[i].y, radii[i]*size, pat.body)
-		if i > 0 {
-			r := (radii[i] + radii[i-1]) / 2 * size
-			paint((j[i].x+j[i-1].x)/2, (j[i].y+j[i-1].y)/2, r, pat.body)
-		}
-	}
-	for i := joints - 1; i >= 0; i-- {
-		if t := pat.back[i]; t != tagWater {
-			paint(j[i].x, j[i].y, radii[i]*size*0.62, t)
-		}
-	}
-	if pat.sheen {
-		// A thin stripe of light along the spine, head to the start of
-		// the tail, narrowing as the body does.
-		for i := 1; i < 9; i++ {
-			paint(j[i].x, j[i].y, radii[i]*size*0.3, tagSheen)
-			paint((j[i].x+j[i+1].x)/2, (j[i].y+j[i+1].y)/2, (radii[i]+radii[i+1])/2*size*0.3, tagSheen)
-		}
-	}
-	if k.grow < 0.6 {
-		return
-	}
-	r := radii[0] * size * 0.72
-	for _, side := range [2]float64{-1, 1} {
-		a := head + side*1.1
-		paint(j[0].x+math.Cos(a)*r, j[0].y+math.Sin(a)*r, math.Max(0.55, 0.3*size), tagEye)
 	}
 }

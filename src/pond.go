@@ -43,6 +43,7 @@ type pond struct {
 	fitted []rgb // the pixels each cell was last fitted to
 
 	ringTab []float32 // scratch for drawRings
+	koiTmp  []float32 // scratch for shape
 }
 
 // ringStep is how finely a ring's height is tabled, in world units.
@@ -334,22 +335,16 @@ func (p *pond) draw() {
 		p.introShadows(sx*2.2, sy*2.2)
 	}
 	for _, k := range order {
+		if k.grow <= 0 {
+			continue
+		}
 		off := 0.5 + 1.0*(1-k.depth)
-		d := float32(k.depth)
-		p.drawKoi(k, func(cx, cy, r float64, t int8) {
-			if t != tagEye {
-				p.castShadow(cx+sx*off, cy+sy*off, r, d)
-			}
-		})
+		p.castKoiShadow(p.shape(k), sx*off, sy*off, float32(k.depth))
 	}
 	for _, k := range order {
-		d := float32(k.depth)
-		p.drawKoi(k, func(cx, cy, r float64, t int8) {
-			p.fill(cx, cy, r, func(i int, _, _ float64) {
-				p.tag[i] = t
-				p.depth[i] = d
-			})
-		})
+		if k.grow > 0 {
+			p.fillKoi(k.shapeBuf, k.pat.body, float32(k.depth))
+		}
 	}
 	for _, pe := range p.petals {
 		p.petal(pe, 0, 0, func(i int) { p.tag[i] = tagPetal })
