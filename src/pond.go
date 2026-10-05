@@ -115,7 +115,9 @@ func newPond(cols, rows int, aspect float64, pal palette, seed uint64, scene str
 		p.setupChase()
 	} else {
 		p.placePads()
-		count := int(clamp(math.Round(p.w*p.h/(18*p.size)/(18*p.size)/6), 3, 8))
+		// Four or five on a wide screen: few enough that the terminal
+		// isn't redrawing every line of the screen every frame.
+		count := int(clamp(math.Round(p.w*p.h/(18*p.size)/(18*p.size)/9), 3, 5))
 		for i := range count {
 			p.koi = append(p.koi, p.newKoi(patterns[i%len(patterns)]))
 		}
@@ -235,19 +237,17 @@ func (p *pond) step(dt float64) {
 		}
 	}
 
-	// The pads drift and the lilies breathe far slower than a pixel a
-	// second, so they move once a second, and that frame is drawn whole;
+	// The pads drift (never turning, as a pad doesn't) and the lilies
+	// breathe far slower than a pixel a second, so they move once a second, and that frame is drawn whole;
 	// the frames between only draw round what swims or floats past. The
 	// chase's pad lies still.
 	p.padT -= dt
 	if p.chase == nil && p.padT <= 0 {
-		since := padEvery - p.padT
 		p.padT = padEvery
 		for _, pd := range p.pads {
 			a := 0.06 * pd.r
 			pd.x = pd.ax + a*math.Sin(p.t*0.05+pd.drift[0]) + 0.4*a*math.Sin(p.t*0.13+pd.drift[1])
 			pd.y = pd.ay + a*math.Sin(p.t*0.04+pd.drift[2]) + 0.4*a*math.Sin(p.t*0.11+pd.drift[3])
-			pd.rot += 0.004 * math.Sin(p.t*0.03+pd.drift[1]) * since * 10
 		}
 		p.lilyT = p.t
 		p.fullNext = true

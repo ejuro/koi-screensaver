@@ -48,7 +48,6 @@ type koi struct {
 	depth     float64
 	depthGoal float64
 	depthT    float64
-	wakeT     float64
 	goal      pt
 	goalT     float64
 	pat       pattern
@@ -71,7 +70,6 @@ func (p *pond) newKoi(pat pattern) *koi {
 	k.depth = p.rng.Float64()
 	k.depthGoal = k.depth
 	k.burstT = 4 + p.rng.Float64()*12
-	k.wakeT = p.rng.Float64() * 0.3
 	for n := range joints {
 		d := seg * p.size * float64(n)
 		k.j[n] = pt{x - math.Cos(k.heading)*d, y - math.Sin(k.heading)*d}
@@ -176,22 +174,13 @@ func (p *pond) swim(k *koi, dt float64) {
 	k.j[0].y += math.Sin(k.heading) * k.speed * dt
 	p.follow(k)
 
-	// Each koi drifts between the bottom and just under the surface; near
-	// the top it pushes a faint wake.
+	// Each koi drifts between the bottom and just under the surface.
 	k.depthT -= dt
 	if k.depthT <= 0 {
 		k.depthGoal = p.rng.Float64()
 		k.depthT = 8 + p.rng.Float64()*14
 	}
 	k.depth += (k.depthGoal - k.depth) * math.Min(1, dt*0.25)
-	k.wakeT -= dt
-	if k.wakeT <= 0 {
-		k.wakeT = 0.3
-		near := 1 - k.depth
-		if amp := 0.55 * near * near * math.Min(1.4, k.speed/base); amp > 0.05 {
-			p.addRing(k.j[1].x, k.j[1].y, radii[1]*p.size, 0.45*base, amp, 2.2, 0.6*p.size)
-		}
-	}
 }
 
 // follow drags the body after the head, but a koi's spine only bends so far.
