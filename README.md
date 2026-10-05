@@ -1,45 +1,48 @@
-# Koi Pond
+# Koi Screensaver
 
-A slow, quiet koi pond as your Omarchy screensaver. It opens with the Omarchy wordmark floating on the water, until each letter breaks apart and gathers itself into a koi that swims away. Koi drift under still lily pads and water lilies, past a few floating petals, and cast soft shadows on the pond floor and on each other.
+Koi as your Omarchy screensaver. It opens with the Omarchy wordmark floating on the water, until each letter breaks apart and gathers itself into a koi that swims away, either into a quiet pond or into a slow chase round a lily pad.
 
-Everything is coloured from your current Omarchy theme, so the pond matches your desktop: ink koi on rice paper under a light theme, pale koi in dark water under a dark one.
+Everything is coloured from your current Omarchy theme, so the koi match your desktop: ink koi on rice paper under a light theme, pale koi in dark water under a dark one.
 
 ![Koi drifting between lily pads under the Sumi Night theme](preview.png)
 
 ## Scenes
 
-Pick one in the panel; both open with the wordmark.
+Pick one in the drawer; both open with the wordmark.
 
-- **Pond**: the koi pond above, with five koi, lily pads and petals.
+- **Pond** (above): five koi drift under still lily pads and water lilies, past a few floating petals, casting soft shadows on the pond floor and on each other.
 - **Koi chase**: two koi, red and ink, circling a single lily pad in still water, always the same distance apart. Now and then one flicks its tail and leaves a little swirl in the water, and faint ripples spread round the pad. It's quieter, and lighter on the computer.
 
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/ejuro/koi-pond.git --enable
+omarchy plugin add https://github.com/ejuro/koi-screensaver.git --enable
 ```
 
-That's all. From then on the pond opens instead of Omarchy's screensaver whenever you've been idle long enough.
+That's all. From then on the koi appear instead of Omarchy's screensaver whenever you've been idle long enough.
 
 ## Use
 
-- **Click the fish** in the bar for its panel: a switch for whether the pond opens by itself when you're idle, the scene, and *Open the pond now*. Any key or mouse movement closes the pond.
-- **Right-click the fish** to flip that switch without opening the panel. The fish is faded while the pond only opens by hand.
-- In the panel, the arrow keys move between the rows (left and right between the scenes), Enter picks, and `o` opens the pond.
-- From anywhere: `omarchy-shell koi-pond start`, or `enable` / `disable` / `toggle` / `status`, and `omarchy-shell koi-pond scene chase` (or `pond`).
+- **Click the fish** in the bar for its drawer:
+  - **Use as screensaver**: whether the koi appear by themselves when you're idle, instead of Omarchy's screensaver.
+  - **Scene**: Pond or Koi chase.
+  - **Preview**: see them now. Any key or mouse movement closes it.
+- **Right-click the fish** to flip *Use as screensaver* without opening the drawer. The fish is faded while it's off.
+- In the drawer, the arrow keys move between the rows, Enter picks, Space flips the switch and `p` previews.
+- From anywhere: `omarchy-shell koi-screensaver start`, or `enable` / `disable` / `toggle` / `status`, and `omarchy-shell koi-screensaver scene chase` (or `pond`).
 
 To open it from **Super + Escape → System → Screensaver** as well, add this line to `~/.config/omarchy/extensions/omarchy-menu.jsonc`, inside the braces. The icon and label have to be repeated, or the menu row loses them:
 
 ```jsonc
-"system.screensaver": {"icon":"󱄄","label":"Screensaver","action":"omarchy-shell koi-pond start"},
+"system.screensaver": {"icon":"󱄄","label":"Screensaver","action":"omarchy-shell koi-screensaver start"},
 ```
 
 ## How it fits in
 
 Omarchy stays in charge of idling. Your idle timeout (`idle.screensaver` in `shell.json`), stay-awake, video playback keeping the screen on, and locking all keep working as before. The plugin only swaps what appears:
 
-- While the pond opens by itself, Omarchy's own screensaver is switched off, using Omarchy's own setting for that. Disabling or removing the plugin switches it back on. If you had already switched Omarchy's screensaver off yourself, it stays off.
-- The pond opens one second after Omarchy's screensaver would have, in a window Omarchy recognises as its screensaver. So the lock screen still follows on time, and closing the pond counts as you coming back.
+- While *Use as screensaver* is on, Omarchy's own screensaver is switched off, using Omarchy's own setting for that. Disabling or removing the plugin switches it back on. If you had already switched Omarchy's screensaver off yourself, it stays off.
+- The koi appear one second after Omarchy's screensaver would have, in a window Omarchy recognises as its screensaver. So the lock screen still follows on time, and closing it counts as you coming back.
 
 ## Performance
 
@@ -51,25 +54,25 @@ It only sends the parts of the screen that changed, at up to 18 frames per secon
 | Koi chase | 65% |
 | Pond | 67% |
 
-Both scenes cost about the same as Omarchy's screensaver. A larger font (see below) or a lower frame rate (`KOI_POND_FPS`) makes either cheaper. It runs only while it's on screen.
+Both scenes cost about the same as Omarchy's screensaver. A larger font (see below) or a lower frame rate (`KOI_SCREENSAVER_FPS`) makes either cheaper. It runs only while it's on screen.
 
 ## Requirements
 
 Omarchy with its shell, and Ghostty, Alacritty or foot as your terminal. kitty is supported too but hasn't been tested yet. Ready-built programs for x86_64 and aarch64 are included, so nothing has to be compiled.
 
-The pond is drawn with Unicode sextant characters in a terminal at font size 4.5, which is much finer than Omarchy's screensaver uses. To change that, set `KOI_POND_FONT_SIZE` in your environment.
+The koi are drawn with Unicode sextant characters in a terminal at font size 4.5, which is much finer than Omarchy's screensaver uses. To change that, set `KOI_SCREENSAVER_FONT_SIZE` in your environment.
 
 ## Building
 
-The pond itself is a small Go program in [`src/`](src). `./build.sh` rebuilds both binaries in `bin/`. To try it in any terminal, run `bin/koi-pond-x86_64`; any key quits. Add `-scene chase` for the koi chase, and `-intro=false` to skip the wordmark.
+The screensaver itself is a small Go program in [`src/`](src). `./build.sh` rebuilds both binaries in `bin/`. To try it in any terminal, run `bin/koi-screensaver-x86_64`; any key quits. Add `-scene chase` for the koi chase, and `-intro=false` to skip the wordmark.
 
 ## Update and remove
 
 ```sh
-omarchy plugin update io.github.ejuro.koi-pond
-omarchy plugin remove io.github.ejuro.koi-pond
+omarchy plugin update io.github.ejuro.koi-screensaver
+omarchy plugin remove io.github.ejuro.koi-screensaver
 ```
 
-The plugin keeps a few small notes (whether it opens when idle, the scene) in `${XDG_STATE_HOME:-~/.local/state}/koi-pond/`, and screensaver mode writes why it last closed to `~/.local/state/koi-pond.log`.
+The plugin keeps a few small notes (whether it opens when idle, the scene) in `${XDG_STATE_HOME:-~/.local/state}/koi-screensaver/`, and screensaver mode writes why it last closed to `~/.local/state/koi-screensaver.log`.
 
 MIT License.

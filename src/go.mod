@@ -1,4 +1,4 @@
-module github.com/ejuro/koi-pond
+module github.com/ejuro/koi-screensaver
 
 go 1.26
 

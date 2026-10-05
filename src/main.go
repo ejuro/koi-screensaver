@@ -1,4 +1,4 @@
-// koi-pond: a slow, quiet pond for the terminal. Koi drift under lily pads
+// koi-screensaver: a slow, quiet koi pond for the terminal. Koi drift under lily pads
 // and water lilies, and petals float by. Coloured from the current Omarchy
 // theme.
 package main
@@ -60,7 +60,7 @@ func main() {
 		return
 	}
 	if err := run(*screensaver, *intro, *scene, *fps, *seed); err != nil {
-		fmt.Fprintln(os.Stderr, "koi-pond:", err)
+		fmt.Fprintln(os.Stderr, "koi-screensaver:", err)
 		os.Exit(1)
 	}
 }
@@ -110,7 +110,7 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		}
 	}()
 
-	// Why it closed, for the log (KOI_POND_LOG, or ~/.local/state/koi-pond.log
+	// Why it closed, for the log (KOI_SCREENSAVER_LOG, or ~/.local/state/koi-screensaver.log
 	// as the screensaver).
 	quit := make(chan string, 1)
 	stop := func(why string) {
@@ -242,10 +242,10 @@ func screensaverFocused() bool {
 }
 
 func logf(format string, args ...any) {
-	path := os.Getenv("KOI_POND_LOG")
+	path := os.Getenv("KOI_SCREENSAVER_LOG")
 	if path == "" && screensaverMode {
 		home, _ := os.UserHomeDir()
-		path = home + "/.local/state/koi-pond.log"
+		path = home + "/.local/state/koi-screensaver.log"
 	}
 	if path != "" {
 		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {

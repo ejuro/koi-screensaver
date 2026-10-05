@@ -3,61 +3,62 @@ import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
-// The fish in the bar and its drop-down: a switch for whether the pond opens
-// by itself when idle, and a row to open it now. The service owns the pond;
+// The fish in the bar and its drawer: whether the koi are your screensaver,
+// which scene they swim in, and a preview. The service owns the screensaver;
 // this is only a handle on it.
 Panel {
   id: root
-  moduleName: "io.github.ejuro.koi-pond"
-  ipcTarget: "io.github.ejuro.koi-pond"
+  moduleName: "io.github.ejuro.koi-screensaver"
+  ipcTarget: "io.github.ejuro.koi-screensaver"
 
-  readonly property var svc: bar && bar.shell ? bar.shell.serviceFor("io.github.ejuro.koi-pond") : null
+  readonly property var svc: bar && bar.shell ? bar.shell.serviceFor("io.github.ejuro.koi-screensaver") : null
   readonly property bool onIdle: svc ? svc.onIdle === true : false
   readonly property bool stayAwake: svc ? svc.stayAwake === true : false
   readonly property int idleSeconds: svc ? svc.screensaverSeconds : 150
   readonly property string scene: svc && svc.scene === "chase" ? "chase" : "pond"
-  readonly property var sceneOptions: [
-    { value: "pond", label: "Pond", tooltip: "Koi drifting under lily pads" },
-    { value: "chase", label: "Koi chase", tooltip: "Two koi circling a lily pad" }
+
+  readonly property var scenes: [
+    { value: "pond", label: "Pond", detail: "Five koi drifting under lily pads" },
+    { value: "chase", label: "Koi chase", detail: "Two koi circling a lily pad" }
   ]
-  // The scene button under the keyboard cursor.
-  property int sceneIndex: 0
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  // Keyboard cursor: the switch in the header, the scene buttons, or the
-  // open-now row.
-  property string focusSection: "header"
+  // The keyboard cursor walks these rows top to bottom.
+  readonly property var rows: ["switch", "scene:pond", "scene:chase", "preview"]
+  property int cursor: 0
   property bool cursorActive: false
+  function at(row) { return root.cursorActive && root.rows[root.cursor] === row }
+  function point(row) { root.cursorActive = true; root.cursor = root.rows.indexOf(row) }
 
   function durationText(s) {
     if (s < 60) return s + " s"
     return Math.floor(s / 60) + " min" + (s % 60 ? " " + (s % 60) + " s" : "")
   }
 
-  // What the switch is doing right now, in a sentence.
+  // The header's one-line status.
   readonly property string statusText: !onIdle
-    ? "Off: Omarchy's own screensaver is back. You can still open the pond below."
+    ? "Off · Omarchy's screensaver in use"
     : stayAwake
-      ? "On, but stay-awake is on, so nothing opens while you're idle."
-      : "On: after " + durationText(idleSeconds) + " idle the koi pond opens instead of Omarchy's screensaver."
+      ? "On · paused while staying awake"
+      : "On · after " + durationText(idleSeconds) + " idle"
 
   function toggleOnIdle() { if (svc) svc.toggle() }
-
   function setScene(value) { if (svc) svc.setScene(value) }
 
-  // Close the panel first, so the pond takes focus from it.
-  function openPond() {
+  // Close the drawer first, so the koi take focus from it.
+  function preview() {
     root.close()
     startTimer.restart()
   }
 
-  function activateCursor() {
-    if (focusSection === "header") toggleOnIdle()
-    else if (focusSection === "scene") setScene(sceneOptions[sceneIndex].value)
-    else openPond()
+  function activate() {
+    var row = root.rows[root.cursor]
+    if (row === "switch") toggleOnIdle()
+    else if (row === "preview") preview()
+    else setScene(row.split(":")[1])
   }
 
   implicitWidth: button.implicitWidth
@@ -65,7 +66,7 @@ Panel {
 
   onOpenedChanged: if (opened) {
     cursorActive = false
-    focusSection = "header"
+    cursor = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -80,9 +81,9 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: "󰈺"
-    tooltipText: root.onIdle ? "Koi Pond · replacing Omarchy's screensaver" : "Koi Pond · Omarchy's screensaver in use"
-    // Like the other icons: plain while the pond is the screensaver, faded
-    // when it only opens by hand.
+    tooltipText: root.onIdle ? "Koi Screensaver · on" : "Koi Screensaver · off"
+    // Like the other icons: plain while the koi are the screensaver, faded
+    // when they only come out for a preview.
     dimmed: !root.onIdle
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) root.toggleOnIdle()
@@ -98,144 +99,131 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(300))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(420))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
-        var order = ["header", "scene", "open"]
-        var at = order.indexOf(root.focusSection)
-        if (dy !== 0) {
-          root.focusSection = order[Math.max(0, Math.min(order.length - 1, at + (dy > 0 ? 1 : -1)))]
-          if (root.focusSection === "scene") root.sceneIndex = root.scene === "chase" ? 1 : 0
-        } else if (dx !== 0 && root.focusSection === "scene") {
-          root.sceneIndex = Math.max(0, Math.min(root.sceneOptions.length - 1, root.sceneIndex + (dx > 0 ? 1 : -1)))
-        }
+        if (dy !== 0) root.cursor = Math.max(0, Math.min(root.rows.length - 1, root.cursor + (dy > 0 ? 1 : -1)))
       }
-      onActivateRequested: if (root.cursorActive) root.activateCursor()
+      onActivateRequested: if (root.cursorActive) root.activate()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
-        if (t === "o" || t === "O") root.openPond()
+        if (t === "p" || t === "P") root.preview()
         else if (t === " ") root.toggleOnIdle()
       }
 
       Column {
         id: column
         width: parent.width
-        spacing: Style.space(12)
+        spacing: Style.space(10)
 
-        Item {
-          id: header
+        PanelHero {
           width: parent.width
-          implicitHeight: hero.implicitHeight
-          // The hero's trailingControl resolves `root` to PanelHero, so it
-          // reaches panel state through `header`.
-          readonly property bool ringVisible: root.cursorActive && root.focusSection === "header"
-          function focusHero() { root.cursorActive = true; root.focusSection = "header" }
-
-          PanelHero {
-            id: hero
-            width: parent.width
-            title: "Koi Pond"
-            meta: "Replaces your screensaver"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            iconOpacity: root.onIdle ? 1.0 : 0.5
-            iconComponent: Component {
-              Text {
-                text: "󰈺"
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.display
-              }
-            }
-
-            trailingControl: Component {
-              ToggleSwitch {
-                id: idleSwitch
-                checked: root.onIdle
-                hasCursor: header.ringVisible
-                foreground: hero.foreground
-                onHovered: function(on) { if (on) header.focusHero() }
-                onToggled: root.toggleOnIdle()
-
-                PanelToolTip {
-                  visible: idleSwitch.containsMouse
-                  text: root.onIdle ? "Give the screensaver back to Omarchy" : "Use the koi pond as your screensaver"
-                  fontFamily: hero.fontFamily
-                }
-              }
-            }
-          }
-        }
-
-        Text {
-          textFormat: Text.PlainText
-          width: parent.width
-          text: root.statusText
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          wrapMode: Text.WordWrap
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(6)
-
-          Text {
-            textFormat: Text.PlainText
-            text: "Scene"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          ButtonGroup {
-            options: root.sceneOptions
-            value: root.scene
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            focusable: false
-            cursorIndex: root.cursorActive && root.focusSection === "scene" ? root.sceneIndex : -1
-            onChanged: function(v) {
-              root.cursorActive = true
-              root.focusSection = "scene"
-              root.sceneIndex = v === "chase" ? 1 : 0
-              root.setScene(v)
-            }
-            onHovered: function(index, isHovered) {
-              if (isHovered) {
-                root.cursorActive = true
-                root.focusSection = "scene"
-                root.sceneIndex = index
-              }
+          title: "Koi Screensaver"
+          meta: root.statusText
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          iconOpacity: root.onIdle ? 1.0 : 0.5
+          iconComponent: Component {
+            Text {
+              text: "󰈺"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.display
             }
           }
         }
 
         PanelSeparator { foreground: root.foreground }
 
+        // Whether the koi come out by themselves when you're idle.
         CursorSurface {
-          id: openRow
+          id: switchRow
           width: parent.width
-          hasCursor: root.cursorActive && root.focusSection === "open"
+          hasCursor: root.at("switch")
           foreground: root.foreground
-          implicitHeight: openLayout.implicitHeight + Style.spacing.rowPaddingX
+          implicitHeight: switchLayout.implicitHeight + Style.spacing.rowPaddingX
 
           MouseArea {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onEntered: { root.cursorActive = true; root.focusSection = "open" }
-            onClicked: root.openPond()
+            onEntered: root.point("switch")
+            onClicked: root.toggleOnIdle()
           }
 
           RowLayout {
-            id: openLayout
+            id: switchLayout
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Style.space(10)
+            anchors.rightMargin: Style.space(10)
+            spacing: Style.space(8)
+
+            RowText {
+              Layout.fillWidth: true
+              title: "Use as screensaver"
+              detail: "Replaces Omarchy's own screensaver"
+            }
+
+            ToggleSwitch {
+              checked: root.onIdle
+              foreground: root.foreground
+              Layout.alignment: Qt.AlignVCenter
+              onHovered: function(on) { if (on) root.point("switch") }
+              onToggled: root.toggleOnIdle()
+            }
+          }
+        }
+
+        PanelSeparator { foreground: root.foreground }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+
+          PanelSectionHeader {
+            text: "SCENE"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Repeater {
+            model: root.scenes
+            SceneRow {
+              required property var modelData
+              width: column.width
+              value: modelData.value
+              label: modelData.label
+              detail: modelData.detail
+            }
+          }
+        }
+
+        PanelSeparator { foreground: root.foreground }
+
+        // A look at the koi now.
+        CursorSurface {
+          width: parent.width
+          hasCursor: root.at("preview")
+          foreground: root.foreground
+          implicitHeight: previewLayout.implicitHeight + Style.spacing.rowPaddingX
+
+          MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: root.point("preview")
+            onClicked: root.preview()
+          }
+
+          RowLayout {
+            id: previewLayout
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
@@ -251,32 +239,86 @@ Panel {
               Layout.alignment: Qt.AlignVCenter
             }
 
-            ColumnLayout {
+            RowText {
               Layout.fillWidth: true
-              spacing: Style.space(1)
-
-              Text {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                text: "Open the pond now"
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                elide: Text.ElideRight
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                text: "Any key or mouse movement closes it"
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
-              }
+              title: "Preview"
+              detail: "Any key or mouse movement closes it"
             }
           }
         }
+      }
+    }
+  }
+
+  // A row's title with a dimmer line under it.
+  component RowText: ColumnLayout {
+    property string title
+    property string detail
+    spacing: Style.space(1)
+
+    Text {
+      textFormat: Text.PlainText
+      Layout.fillWidth: true
+      text: parent.title
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      Layout.fillWidth: true
+      text: parent.detail
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideRight
+    }
+  }
+
+  // One scene to choose, ticked and highlighted when it's the one in use.
+  component SceneRow: CursorSurface {
+    id: sceneRow
+    property string value
+    property string label
+    property string detail
+    readonly property bool chosen: root.scene === value
+
+    hasCursor: root.at("scene:" + value)
+    current: chosen
+    foreground: root.foreground
+    implicitHeight: sceneLayout.implicitHeight + Style.spacing.rowPaddingX
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: root.point("scene:" + sceneRow.value)
+      onClicked: root.setScene(sceneRow.value)
+    }
+
+    RowLayout {
+      id: sceneLayout
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
+
+      RowText {
+        Layout.fillWidth: true
+        title: sceneRow.label
+        detail: sceneRow.detail
+      }
+
+      Text {
+        text: sceneRow.chosen ? "󰄬" : ""
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.heading
+        Layout.alignment: Qt.AlignVCenter
       }
     }
   }

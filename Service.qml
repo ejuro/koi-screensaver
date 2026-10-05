@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 
-// Opens the koi pond as the screensaver.
+// Opens the koi as the screensaver.
 //
 // Omarchy's idle service stays in charge of everything else. It still decides
 // when the machine is idle, honours stay-awake and video inhibitors, locks on
@@ -17,8 +17,8 @@ Item {
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, ""))
-  readonly property string launcher: pluginDir + "/bin/koi-pond-screensaver"
-  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")) + "/koi-pond"
+  readonly property string launcher: pluginDir + "/bin/koi-screensaver"
+  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")) + "/koi-screensaver"
 
   // Omarchy's own "screensaver off" switch, and our note that we were the
   // ones who flipped it, so removing the plugin only undoes what it did.
@@ -161,7 +161,7 @@ Item {
   Component.onDestruction: if (root.onIdle) releaseOmarchyScreensaver()
 
   IpcHandler {
-    target: "koi-pond"
+    target: "koi-screensaver"
 
     function start(): string { return root.start(false) }
     function enable(): string { return root.setOnIdle(true) }

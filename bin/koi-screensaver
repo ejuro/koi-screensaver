@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# Open the koi pond fullscreen on every monitor, the way
+# Open the koi fullscreen on every monitor, the way
 # omarchy-launch-screensaver opens its text effects: the same window class, so
 # Omarchy's fullscreen rule, idle service and lock screen all treat it as the
 # screensaver.
 
 # Use the program built for this machine, shipped next to this script.
 here=$(dirname "$(readlink -f "$0")")
-pond="$here/koi-pond-$(uname -m)"
-[[ -x $pond ]] || pond=$(command -v koi-pond) || {
-  omarchy-notification-send -g 󰈺 "Koi Pond has no build for $(uname -m)" 2>/dev/null
+pond="$here/koi-screensaver-$(uname -m)"
+[[ -x $pond ]] || pond=$(command -v koi-screensaver) || {
+  omarchy-notification-send -g 󰈺 "Koi Screensaver has no build for $(uname -m)" 2>/dev/null
   exit 1
 }
 
@@ -22,27 +22,27 @@ terminal=$(xdg-terminal-exec --print-id)
 case $terminal in
 *Alacritty* | *ghostty* | *foot* | *kitty*) ;;
 *)
-  omarchy-notification-send -g 󰈺 "Koi Pond only runs in Alacritty, Foot, Ghostty, or Kitty" 2>/dev/null
+  omarchy-notification-send -g 󰈺 "Koi Screensaver only runs in Alacritty, Foot, Ghostty, or Kitty" 2>/dev/null
   exit 1
   ;;
 esac
 
 # A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
 # their size on screen and are just drawn more smoothly.
-font=${KOI_POND_FONT_SIZE:-4.5}
+font=${KOI_SCREENSAVER_FONT_SIZE:-4.5}
 
 # Which scene: the pond, or the koi chase. Chosen in the bar panel, which
-# keeps it in the plugin's state; KOI_POND_SCENE overrides it.
-scene=${KOI_POND_SCENE:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/koi-pond/scene" 2>/dev/null)}
+# keeps it in the plugin's state; KOI_SCREENSAVER_SCENE overrides it.
+scene=${KOI_SCREENSAVER_SCENE:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/scene" 2>/dev/null)}
 [[ $scene == chase ]] || scene=pond
 
 # Frames per second: as many as fit under 18 while each frame still lasts a
 # whole number of the monitor's refreshes, so the koi move evenly (17.1 at
 # 120 Hz, 18 at 144 Hz, 15 at 60 Hz). Under 18 keeps it no heavier than
-# Omarchy's own screensaver. KOI_POND_FPS overrides.
+# Omarchy's own screensaver. KOI_SCREENSAVER_FPS overrides.
 fps_for() {
-  if [[ $KOI_POND_FPS =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-    echo "$KOI_POND_FPS"
+  if [[ $KOI_SCREENSAVER_FPS =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "$KOI_SCREENSAVER_FPS"
     return
   fi
   local hz

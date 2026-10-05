@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.ejuro.koi-pond",
-  "name": "Koi Pond",
+  "id": "io.github.ejuro.koi-screensaver",
+  "name": "Koi Screensaver",
   "version": "1.0.0",
   "author": "ejuro",
   "license": "MIT",
-  "description": "A slow, quiet koi pond as your screensaver: koi drifting under lily pads, or two koi circling one, coloured by your theme.",
+  "description": "Koi as your screensaver: drifting under lily pads, or two of them circling one, coloured by your theme.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,8 +16,8 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Koi Pond",
-    "description": "Open the koi pond now, pick its scene, or choose whether it opens by itself when you are idle.",
+    "displayName": "Koi Screensaver",
+    "description": "Choose whether the koi are your screensaver, pick their scene, or preview them.",
     "category": "Appearance",
     "aliases": [
       "koi",

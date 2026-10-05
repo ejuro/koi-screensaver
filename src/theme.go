@@ -40,7 +40,7 @@ func themeColors() map[string]rgb {
 	} {
 		c[k], _ = hex(v)
 	}
-	path := os.Getenv("KOI_POND_COLORS")
+	path := os.Getenv("KOI_SCREENSAVER_COLORS")
 	if path == "" {
 		home, _ := os.UserHomeDir()
 		path = filepath.Join(home, ".local/state/omarchy/current/theme/colors.toml")
