@@ -270,7 +270,13 @@ func (p *pond) fillKoi(s *koiShape, body int8, d float32) {
 	}
 	if s.eyeR > 0 {
 		for _, e := range s.eyes {
-			p.fill(e.x, e.y, s.eyeR, func(i int, _, _ float64) { p.tag[i] = tagEye })
+			p.fill(e.x, e.y, s.eyeR, func(i int, _, _ float64) {
+				if p.pal.tags[p.tag[i]].lum() < 0.35 {
+					p.tag[i] = tagEyePale
+				} else {
+					p.tag[i] = tagEye
+				}
+			})
 		}
 	}
 }

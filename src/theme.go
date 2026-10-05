@@ -82,8 +82,9 @@ func themeColors() map[string]rgb {
 // Everything in the pond is one of these flat colours, except the water,
 // which is shaded per pixel.
 const (
-	tagWater int8 = iota
-	tagEye
+	tagWater   int8 = iota
+	tagEye          // dark, on a light or red head
+	tagEyePale      // pale, on a head as dark as ink
 	// koi
 	tagInk
 	tagRed
@@ -135,7 +136,15 @@ func newPalette(c map[string]rgb) palette {
 	p.trough = mix(p.deep, darkest, 0.25)
 	p.koiShadow = black
 
-	p.tags[tagEye] = mix(p.deep, darkest, 0.4)
+	// Eyes as on the Sumi koi wallpaper: dark ink, or a pale grey where
+	// the head itself is dark.
+	if p.dark {
+		p.tags[tagEye] = mix(p.deep, darkest, 0.4)
+		p.tags[tagEyePale] = mix(bg, fg, 0.5)
+	} else {
+		p.tags[tagEye] = mix(fg, black, 0.2)
+		p.tags[tagEyePale] = mix(fg, bg, 0.45)
+	}
 	p.tags[tagInk] = fg
 	p.tags[tagRed] = c["red"]
 	p.tags[tagOrange] = c["orange"]
