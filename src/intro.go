@@ -328,6 +328,12 @@ func (p *pond) startIntro() {
 			}
 		}
 	}
+	if c := p.chase; c != nil && len(groups) > 0 && in.count[0] > 0 {
+		// The chase sets off from where the first koi's letters were, and
+		// waits for it.
+		c.theta = math.Atan2(in.centre[0].y-p.h/2, in.centre[0].x-p.w/2)
+		c.started = false
+	}
 	p.intro = in
 	p.rings = p.rings[:0]
 	p.nextDrop = math.Max(p.nextDrop, in.end+3)

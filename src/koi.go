@@ -54,6 +54,8 @@ type koi struct {
 	pat       pattern
 	grow      float64 // 1 when whole; less while the intro gathers it up
 	ease      float64 // 1 when swimming freely; less while it starts to
+	slot      float64 // the chase: its place on the circle, behind the leader
+	flick     float64 // the chase: seconds into a tail flick, 0 for none
 }
 
 func (p *pond) newKoi(pat pattern) *koi {
@@ -172,16 +174,7 @@ func (p *pond) swim(k *koi, dt float64) {
 
 	k.j[0].x += math.Cos(k.heading) * k.speed * dt
 	k.j[0].y += math.Sin(k.heading) * k.speed * dt
-	// The body follows the head, but a koi's spine only bends so far.
-	gap := seg * p.size
-	back := k.heading + math.Pi
-	for n := 1; n < joints; n++ {
-		a, b := k.j[n-1], &k.j[n]
-		ang := math.Atan2(b.y-a.y, b.x-a.x)
-		ang = back + clamp(angleTo(back, ang), -0.22, 0.22)
-		b.x, b.y = a.x+math.Cos(ang)*gap, a.y+math.Sin(ang)*gap
-		back = ang
-	}
+	p.follow(k)
 
 	// Each koi drifts between the bottom and just under the surface; near
 	// the top it pushes a faint wake.
@@ -198,6 +191,19 @@ func (p *pond) swim(k *koi, dt float64) {
 		if amp := 0.55 * near * near * math.Min(1.4, k.speed/base); amp > 0.05 {
 			p.addRing(k.j[1].x, k.j[1].y, radii[1]*p.size, 0.45*base, amp, 2.2, 0.6*p.size)
 		}
+	}
+}
+
+// follow drags the body after the head, but a koi's spine only bends so far.
+func (p *pond) follow(k *koi) {
+	gap := seg * p.size
+	back := k.heading + math.Pi
+	for n := 1; n < joints; n++ {
+		a, b := k.j[n-1], &k.j[n]
+		ang := math.Atan2(b.y-a.y, b.x-a.x)
+		ang = back + clamp(angleTo(back, ang), -0.22, 0.22)
+		b.x, b.y = a.x+math.Cos(ang)*gap, a.y+math.Sin(ang)*gap
+		back = ang
 	}
 }
 

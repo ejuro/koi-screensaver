@@ -30,6 +30,11 @@ Item {
   property bool onIdle: true
   property bool loaded: false
 
+  // What the pond shows: "pond", koi drifting under lily pads, or "chase",
+  // two koi circling a lily pad. Kept in the state dir, where the launcher
+  // reads it.
+  property string scene: "pond"
+
   // The same timeout as Omarchy's screensaver, read from its shell.json.
   property int screensaverSeconds: 150
 
@@ -47,6 +52,13 @@ Item {
   }
 
   function toggle() { return setOnIdle(!root.onIdle) }
+
+  function setScene(value) {
+    var s = value === "chase" ? "chase" : "pond"
+    root.scene = s
+    run(["bash", "-c", 'mkdir -p "$1" && printf "%s\\n" "$2" > "$1/scene"', "bash", root.stateDir, s])
+    return s
+  }
 
   // Switch Omarchy's own screensaver off, unless the user already had.
   function claimOmarchyScreensaver() {
@@ -82,6 +94,7 @@ Item {
   function statusJson() {
     return JSON.stringify({
       onIdle: root.onIdle,
+      scene: root.scene,
       stayAwake: root.stayAwake,
       idle: idleMonitor.isIdle,
       timeout: idleMonitor.timeout,
@@ -129,6 +142,12 @@ Item {
   }
 
   FileView {
+    path: root.stateDir + "/scene"
+    printErrors: false
+    onLoaded: root.scene = text().trim() === "chase" ? "chase" : "pond"
+  }
+
+  FileView {
     path: root.stateDir + "/idle-off"
     printErrors: false
     onLoaded: { root.onIdle = false; root.loaded = true; root.releaseOmarchyScreensaver() }
@@ -149,5 +168,6 @@ Item {
     function disable(): string { return root.setOnIdle(false) }
     function toggle(): string { return root.toggle() }
     function status(): string { return root.statusJson() }
+    function scene(name: string): string { return root.setScene(name) }
   }
 }

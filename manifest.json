@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "ejuro",
   "license": "MIT",
-  "description": "A slow, quiet koi pond as your screensaver: koi drifting under lily pads, coloured by your theme.",
+  "description": "A slow, quiet koi pond as your screensaver: koi drifting under lily pads, or two koi circling one, coloured by your theme.",
   "kinds": [
     "service",
     "bar-widget"
@@ -17,7 +17,7 @@
   },
   "barWidget": {
     "displayName": "Koi Pond",
-    "description": "Open the koi pond now, or choose whether it opens by itself when you are idle.",
+    "description": "Open the koi pond now, pick its scene, or choose whether it opens by itself when you are idle.",
     "category": "Appearance",
     "aliases": [
       "koi",

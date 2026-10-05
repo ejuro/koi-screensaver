@@ -26,6 +26,13 @@ type pond struct {
 	petals []*petal
 	rings  []ring
 	intro  *intro // while the wordmark turns into the koi
+	chase  *chase // the koi chase scene; nil for the pond
+
+	// The boxes drawn last frame, and whether the next frame must be drawn
+	// whole. Only the chase draws part of a frame.
+	prevBoxes []box
+	fullNext  bool
+	drawn     []box // what this frame drew, nil for all of it
 
 	nextDrop float64 // seconds until the next raindrop
 
@@ -35,6 +42,7 @@ type pond struct {
 	height []float32
 	base   []rgb // the still water
 	out    []rgb
+	fitted []rgb // the pixels each cell was last fitted to
 }
 
 type pt struct{ x, y float64 }
@@ -58,8 +66,8 @@ type petal struct {
 	x, y, vx, vy, rot, spin, r float64
 }
 
-func newPond(cols, rows int, aspect float64, pal palette, seed uint64) *pond {
-	p := &pond{cols: cols, rows: rows, aspect: aspect, pal: pal, fade: 1, rng: rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15))}
+func newPond(cols, rows int, aspect float64, pal palette, seed uint64, scene string) *pond {
+	p := &pond{cols: cols, rows: rows, aspect: aspect, pal: pal, fade: 1, fullNext: true, rng: rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15))}
 	p.pw, p.ph = cols*2, rows*3
 	p.w, p.h = float64(p.pw), float64(p.ph)*aspect
 	n := p.pw * p.ph
@@ -69,6 +77,7 @@ func newPond(cols, rows int, aspect float64, pal palette, seed uint64) *pond {
 	p.height = make([]float32, n)
 	p.base = make([]rgb, n)
 	p.out = make([]rgb, n)
+	p.fitted = make([]rgb, n)
 
 	m := math.Min(p.w, p.h)
 	p.size = math.Max(0.9, m*0.21/18)
@@ -84,19 +93,23 @@ func newPond(cols, rows int, aspect float64, pal palette, seed uint64) *pond {
 		}
 	}
 
-	p.placePads()
-	count := int(clamp(math.Round(p.w*p.h/(18*p.size)/(18*p.size)/6), 3, 8))
-	for i := range count {
-		p.koi = append(p.koi, p.newKoi(patterns[i%len(patterns)]))
+	if scene == sceneChase {
+		p.setupChase()
+	} else {
+		p.placePads()
+		count := int(clamp(math.Round(p.w*p.h/(18*p.size)/(18*p.size)/6), 3, 8))
+		for i := range count {
+			p.koi = append(p.koi, p.newKoi(patterns[i%len(patterns)]))
+		}
+		for range 3 {
+			p.petals = append(p.petals, &petal{
+				x: p.rng.Float64() * p.w, y: p.rng.Float64() * p.h,
+				vx: (p.rng.Float64() - 0.5) * 1.2 * p.size, vy: (p.rng.Float64() - 0.5) * 0.8 * p.size,
+				rot: p.rng.Float64() * 6.28, spin: (p.rng.Float64() - 0.5) * 0.15, r: 1.6 * p.size,
+			})
+		}
+		p.nextDrop = 3 + p.rng.Float64()*8
 	}
-	for range 3 {
-		p.petals = append(p.petals, &petal{
-			x: p.rng.Float64() * p.w, y: p.rng.Float64() * p.h,
-			vx: (p.rng.Float64() - 0.5) * 1.2 * p.size, vy: (p.rng.Float64() - 0.5) * 0.8 * p.size,
-			rot: p.rng.Float64() * 6.28, spin: (p.rng.Float64() - 0.5) * 0.15, r: 1.6 * p.size,
-		})
-	}
-	p.nextDrop = 3 + p.rng.Float64()*8
 	// Let the koi straighten out and spread over the pond before the first
 	// frame.
 	for range 600 { // twenty seconds
@@ -178,23 +191,37 @@ func (p *pond) onPad(x, y float64) bool {
 func (p *pond) step(dt float64) {
 	p.t += dt
 
-	// Now and then a single raindrop, never a shower.
-	p.nextDrop -= dt
-	if p.nextDrop <= 0 {
-		p.nextDrop = 5 + p.rng.Float64()*10
-		p.drop(p.rng.Float64()*p.w, p.rng.Float64()*p.h)
+	// Now and then a single raindrop, never a shower; no rain in the chase.
+	if p.chase == nil {
+		p.nextDrop -= dt
+		if p.nextDrop <= 0 {
+			p.nextDrop = 5 + p.rng.Float64()*10
+			p.drop(p.rng.Float64()*p.w, p.rng.Float64()*p.h)
+		}
 	}
 
 	if p.intro != nil {
 		p.stepIntro(dt)
 	}
+	if p.chase != nil {
+		p.stepChase(dt)
+	}
 	for _, k := range p.koi {
-		if k.ease > 0 {
+		if k.ease <= 0 {
+			continue
+		}
+		if p.chase != nil {
+			p.chaseSwim(k, dt*k.ease)
+		} else {
 			p.swim(k, dt*k.ease)
 		}
 	}
 
+	// The chase's pad lies still.
 	for _, pd := range p.pads {
+		if p.chase != nil {
+			break
+		}
 		a := 0.06 * pd.r
 		pd.x = pd.ax + a*math.Sin(p.t*0.05+pd.drift[0]) + 0.4*a*math.Sin(p.t*0.13+pd.drift[1])
 		pd.y = pd.ay + a*math.Sin(p.t*0.04+pd.drift[2]) + 0.4*a*math.Sin(p.t*0.11+pd.drift[3])
@@ -296,13 +323,30 @@ func (p *pond) castShadow(cx, cy, r float64, d float32) {
 }
 
 func (p *pond) draw() {
-	clear(p.tag)
-	for i := range p.shade {
-		p.shade[i] = float32(math.Inf(1))
+	p.drawn = p.frameBoxes()
+	if p.drawn == nil {
+		clear(p.tag)
+		for i := range p.shade {
+			p.shade[i] = float32(math.Inf(1))
+		}
+		clear(p.height)
+	} else {
+		for _, b := range p.drawn {
+			for y := b.y0; y < b.y1; y++ {
+				lo, hi := y*p.pw+b.x0, y*p.pw+b.x1
+				clear(p.tag[lo:hi])
+				clear(p.height[lo:hi])
+				for i := lo; i < hi; i++ {
+					p.shade[i] = float32(math.Inf(1))
+				}
+			}
+		}
 	}
-	clear(p.height)
 
 	p.drawRings()
+	if p.chase != nil {
+		p.drawSwirls()
+	}
 
 	// The deepest koi first, so shallower ones pass over them.
 	order := slices.Clone(p.koi)
@@ -314,7 +358,9 @@ func (p *pond) draw() {
 	// swimming beneath.
 	sx, sy := 0.7*p.size, 1.2*p.size
 	for _, pd := range p.pads {
-		p.castShadow(pd.x+sx*2.2, pd.y+sy*2.2, pd.r*0.97, -1)
+		if p.touches(pd.x+sx*2.2, pd.y+sy*2.2, pd.r) {
+			p.castShadow(pd.x+sx*2.2, pd.y+sy*2.2, pd.r*0.97, -1)
+		}
 	}
 	for _, pe := range p.petals {
 		p.petal(pe, sx*2.2, sy*2.2, func(i int) { p.shade[i] = -1 })
@@ -344,7 +390,9 @@ func (p *pond) draw() {
 		p.petal(pe, 0, 0, func(i int) { p.tag[i] = tagPetal })
 	}
 	for _, pd := range p.pads {
-		p.drawPad(pd)
+		if p.touches(pd.x, pd.y, pd.r) {
+			p.drawPad(pd)
+		}
 	}
 	for _, pd := range p.pads {
 		if pd.flower > 0 {
@@ -353,11 +401,22 @@ func (p *pond) draw() {
 	}
 
 	pal := &p.pal
-	inParallel(len(p.tag), func(lo, hi int) {
-		for i := lo; i < hi; i++ {
-			p.shadePixel(i)
+	if p.drawn == nil {
+		inParallel(len(p.tag), func(lo, hi int) {
+			for i := lo; i < hi; i++ {
+				p.shadePixel(i)
+			}
+		})
+	} else {
+		// A few small boxes: one core does them with less fuss than eight.
+		for _, b := range p.drawn {
+			for y := b.y0; y < b.y1; y++ {
+				for i := y*p.pw + b.x0; i < y*p.pw+b.x1; i++ {
+					p.shadePixel(i)
+				}
+			}
 		}
-	})
+	}
 	if p.fade < 1 {
 		f := p.fade * p.fade * (3 - 2*p.fade)
 		for i, c := range p.out {
@@ -367,6 +426,40 @@ func (p *pond) draw() {
 	if p.intro != nil {
 		p.drawIntro()
 	}
+}
+
+// touches is whether a disc lies at least partly in what this frame draws.
+// Outside that, last frame's pixels stand, so a still thing there needn't be
+// drawn again.
+func (p *pond) touches(cx, cy, r float64) bool {
+	if p.drawn == nil {
+		return true
+	}
+	x0, x1 := int(math.Floor(cx-r)), int(math.Ceil(cx+r))+1
+	y0, y1 := int(math.Floor((cy-r)/p.aspect)), int(math.Ceil((cy+r)/p.aspect))+1
+	for _, b := range p.drawn {
+		if x0 < b.x1 && b.x0 < x1 && y0 < b.y1 && b.y0 < y1 {
+			return true
+		}
+	}
+	return false
+}
+
+// frameBoxes is what to draw this frame: nil for the whole pond, or, in the
+// chase once it has settled, the boxes round whatever moves, both where it
+// was last frame and where it is now.
+func (p *pond) frameBoxes() []box {
+	if p.chase == nil {
+		return nil
+	}
+	cur := p.movingBoxes()
+	prev := p.prevBoxes
+	p.prevBoxes = cur
+	if p.fullNext || p.intro != nil || p.fade < 1 {
+		p.fullNext = false
+		return nil
+	}
+	return mergeBoxes(append(slices.Clone(prev), cur...))
 }
 
 // shadePixel gives pixel i its final colour from what was drawn there.

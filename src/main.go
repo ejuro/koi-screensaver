@@ -24,20 +24,24 @@ const (
 
 func main() {
 	screensaver := flag.Bool("screensaver", false, "run as the Omarchy screensaver: hide the cursor, wake on mouse, close every screensaver window on exit")
-	fps := flag.Int("fps", 20, "frames per second")
+	fps := flag.Float64("fps", 15, "frames per second; a whole fraction of the screen's refresh rate keeps the motion even")
 	seed := flag.Uint64("seed", uint64(time.Now().UnixNano()), "random seed")
 	pngOut := flag.String("png", "", "render a preview to this PNG instead of running")
 	seconds := flag.Float64("seconds", 20, "preview: seconds to simulate first")
 	size := flag.String("size", "279x72", "preview: terminal size in cells")
 	cellPx := flag.String("cell", "11x24", "preview: cell size in pixels")
 	intro := flag.Bool("intro", true, "open with the Omarchy wordmark turning into the koi")
+	scene := flag.String("scene", scenePond, "what to show: pond (koi drifting under lily pads) or chase (two koi circling a lily pad)")
 	flag.Parse()
+	if *scene != scenePond && *scene != sceneChase {
+		*scene = scenePond
+	}
 
 	if *pngOut != "" {
 		var cols, rows, cw, ch int
 		fmt.Sscanf(*size, "%dx%d", &cols, &rows)
 		fmt.Sscanf(*cellPx, "%dx%d", &cw, &ch)
-		p := newPond(cols, rows, aspectOf(cw, ch), newPalette(themeColors()), *seed)
+		p := newPond(cols, rows, aspectOf(cw, ch), newPalette(themeColors()), *seed, *scene)
 		p.fade = 0
 		if *intro {
 			p.startIntro()
@@ -55,7 +59,7 @@ func main() {
 		}
 		return
 	}
-	if err := run(*screensaver, *intro, *fps, *seed); err != nil {
+	if err := run(*screensaver, *intro, *scene, *fps, *seed); err != nil {
 		fmt.Fprintln(os.Stderr, "koi-pond:", err)
 		os.Exit(1)
 	}
@@ -70,7 +74,8 @@ func aspectOf(cw, ch int) float64 {
 
 var screensaverMode bool
 
-func run(screensaver, intro bool, fps int, seed uint64) error {
+func run(screensaver, intro bool, scene string, fps float64, seed uint64) error {
+	fps = clamp(fps, 1, 60)
 	screensaverMode = screensaver
 	fd := int(os.Stdin.Fd())
 	old, err := unix.IoctlGetTermios(fd, unix.TCGETS)
@@ -152,7 +157,7 @@ func run(screensaver, intro bool, fps int, seed uint64) error {
 		cols, rows, cw, ch = winsize(fd)
 	}
 	pal := newPalette(themeColors())
-	p := newPond(cols, rows, aspectOf(cw, ch), pal, seed)
+	p := newPond(cols, rows, aspectOf(cw, ch), pal, seed, scene)
 	p.fade = 0 // rise gently out of the background, over a few seconds
 	if intro {
 		p.startIntro()
@@ -170,7 +175,7 @@ func run(screensaver, intro bool, fps int, seed uint64) error {
 	// pond at a small font) doesn't play the pond in slow motion. Capped,
 	// so a stall doesn't make the koi jump.
 	last := time.Now()
-	tick := time.NewTicker(time.Second / time.Duration(fps))
+	tick := time.NewTicker(time.Duration(float64(time.Second) / fps))
 	defer tick.Stop()
 	var buf []byte
 	for {
@@ -186,7 +191,7 @@ func run(screensaver, intro bool, fps int, seed uint64) error {
 			c, r, w, h := winsize(fd)
 			if c != cols || r != rows {
 				cols, rows = c, r
-				p = newPond(cols, rows, aspectOf(w, h), pal, seed+1)
+				p = newPond(cols, rows, aspectOf(w, h), pal, seed+1, scene)
 				p.fade = 0
 				cur = make([]cell, cols*rows)
 				prev = make([]cell, cols*rows)
@@ -194,7 +199,7 @@ func run(screensaver, intro bool, fps int, seed uint64) error {
 			}
 			invalidate()
 		case now := <-tick.C:
-			dt := min(now.Sub(last).Seconds(), 3/float64(fps))
+			dt := min(now.Sub(last).Seconds(), 3/fps)
 			last = now
 			p.fade = math.Min(1, p.fade+dt/fadeSeconds)
 			p.step(dt)

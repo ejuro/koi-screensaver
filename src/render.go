@@ -27,17 +27,37 @@ type cell struct {
 // cells splits each cell's six pixels into the two colours that fit them
 // best, trying every way to split them.
 func (p *pond) cells(dst []cell) {
-	inParallel(p.rows, func(lo, hi int) {
-		var px [6]rgb
-		for row := lo; row < hi; row++ {
-			for c := 0; c < p.cols; c++ {
-				for i := range 6 {
-					px[i] = p.out[(row*3+i/2)*p.pw+c*2+i%2]
+	boxes, spread := p.drawn, func(n int, f func(lo, hi int)) { f(0, n) }
+	if boxes == nil {
+		boxes, spread = []box{{0, 0, p.pw, p.ph}}, inParallel
+	}
+	// Only the cells drawn this frame; the rest of dst still holds them.
+	// The whole pond is spread over the cores, a few small boxes are not.
+	whole := p.drawn == nil
+	for _, b := range boxes {
+		r0, c0, c1 := b.y0/3, b.x0/2, b.x1/2
+		spread(b.y1/3-r0, func(lo, hi int) {
+			var px [6]rgb
+			for row := r0 + lo; row < r0+hi; row++ {
+				for c := c0; c < c1; c++ {
+					same := !whole
+					for i := range 6 {
+						j := (row*3+i/2)*p.pw + c*2 + i%2
+						px[i] = p.out[j]
+						if px[i] != p.fitted[j] {
+							same = false
+							p.fitted[j] = px[i]
+						}
+					}
+					// Most of a box is water that looks as it did last
+					// frame; its cell needn't be fitted again.
+					if !same {
+						dst[row*p.cols+c] = fit(px)
+					}
 				}
-				dst[row*p.cols+c] = fit(px)
 			}
-		}
-	})
+		})
+	}
 }
 
 // inParallel splits 0..n into a band per core (at most 8) and runs f on

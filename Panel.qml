@@ -15,12 +15,20 @@ Panel {
   readonly property bool onIdle: svc ? svc.onIdle === true : false
   readonly property bool stayAwake: svc ? svc.stayAwake === true : false
   readonly property int idleSeconds: svc ? svc.screensaverSeconds : 150
+  readonly property string scene: svc && svc.scene === "chase" ? "chase" : "pond"
+  readonly property var sceneOptions: [
+    { value: "pond", label: "Pond", tooltip: "Koi drifting under lily pads" },
+    { value: "chase", label: "Koi chase", tooltip: "Two koi circling a lily pad" }
+  ]
+  // The scene button under the keyboard cursor.
+  property int sceneIndex: 0
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  // Keyboard cursor: the switch in the header, or the open-now row.
+  // Keyboard cursor: the switch in the header, the scene buttons, or the
+  // open-now row.
   property string focusSection: "header"
   property bool cursorActive: false
 
@@ -38,6 +46,8 @@ Panel {
 
   function toggleOnIdle() { if (svc) svc.toggle() }
 
+  function setScene(value) { if (svc) svc.setScene(value) }
+
   // Close the panel first, so the pond takes focus from it.
   function openPond() {
     root.close()
@@ -46,6 +56,7 @@ Panel {
 
   function activateCursor() {
     if (focusSection === "header") toggleOnIdle()
+    else if (focusSection === "scene") setScene(sceneOptions[sceneIndex].value)
     else openPond()
   }
 
@@ -94,8 +105,14 @@ Panel {
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
-        if (dy > 0) root.focusSection = "open"
-        else if (dy < 0) root.focusSection = "header"
+        var order = ["header", "scene", "open"]
+        var at = order.indexOf(root.focusSection)
+        if (dy !== 0) {
+          root.focusSection = order[Math.max(0, Math.min(order.length - 1, at + (dy > 0 ? 1 : -1)))]
+          if (root.focusSection === "scene") root.sceneIndex = root.scene === "chase" ? 1 : 0
+        } else if (dx !== 0 && root.focusSection === "scene") {
+          root.sceneIndex = Math.max(0, Math.min(root.sceneOptions.length - 1, root.sceneIndex + (dx > 0 ? 1 : -1)))
+        }
       }
       onActivateRequested: if (root.cursorActive) root.activateCursor()
       onCloseRequested: root.close()
@@ -163,6 +180,41 @@ Panel {
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WordWrap
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(6)
+
+          Text {
+            textFormat: Text.PlainText
+            text: "Scene"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          ButtonGroup {
+            options: root.sceneOptions
+            value: root.scene
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            focusable: false
+            cursorIndex: root.cursorActive && root.focusSection === "scene" ? root.sceneIndex : -1
+            onChanged: function(v) {
+              root.cursorActive = true
+              root.focusSection = "scene"
+              root.sceneIndex = v === "chase" ? 1 : 0
+              root.setScene(v)
+            }
+            onHovered: function(index, isHovered) {
+              if (isHovered) {
+                root.cursorActive = true
+                root.focusSection = "scene"
+                root.sceneIndex = index
+              }
+            }
+          }
         }
 
         PanelSeparator { foreground: root.foreground }
