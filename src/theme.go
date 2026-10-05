@@ -136,14 +136,14 @@ func newPalette(c map[string]rgb) palette {
 	p.trough = mix(p.deep, darkest, 0.25)
 	p.koiShadow = black
 
-	// Eyes as on the Sumi koi wallpaper: dark ink, or a pale grey where
-	// the head itself is dark.
+	// Eyes: dark ink, or nearly the lightest colour where the head itself
+	// is dark.
 	if p.dark {
 		p.tags[tagEye] = mix(p.deep, darkest, 0.4)
-		p.tags[tagEyePale] = mix(bg, fg, 0.5)
+		p.tags[tagEyePale] = mix(bg, fg, 0.9)
 	} else {
 		p.tags[tagEye] = mix(fg, black, 0.2)
-		p.tags[tagEyePale] = mix(fg, bg, 0.45)
+		p.tags[tagEyePale] = mix(fg, bg, 0.9)
 	}
 	p.tags[tagInk] = fg
 	p.tags[tagRed] = c["red"]
