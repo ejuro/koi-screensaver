@@ -11,8 +11,9 @@ import (
 
 // The intro: Omarchy's wordmark is painted on to the pond in one stroke, left
 // to right, and rests a moment. Then each letter breaks into motes that
-// stream together and settle into the shape of a koi, and once they have all
-// landed the koi shows in their place and swims away.
+// stream over to a koi, body, fins and tail. Where each mote lands, the koi
+// grows out from under it in the same colour while the mote melts into it,
+// so the koi is built up from the letters' pieces, and swims away.
 
 const introHold = 3.0 // seconds the wordmark rests before it breaks up
 
@@ -23,17 +24,18 @@ type intro struct {
 	release  []float64 // when each koi starts to swim
 	centre   []pt      // where each koi's letter was
 	splashed []bool
-	sum      []float64
 	count    []int
-	shown    []float64 // when each koi took over from its motes, or 0
+	first    []float64 // when each koi's first mote lands
+	last     []float64 // and its last
 	end      float64
 	x0, x1   float64 // the wordmark's left and right, for the stroke
 	y0, y1   float64
 }
 
 const (
-	strokeTime = 1.3  // seconds the stroke takes to cross the wordmark
-	handOver   = 0.35 // seconds the motes take to fade into the koi
+	strokeTime = 1.3 // seconds the stroke takes to cross the wordmark
+	melt       = 0.5 // seconds a landed mote takes to melt into the koi
+	closeUp    = 0.7 // seconds the koi takes to close up after the last mote
 )
 
 // mote is one pixel of the wordmark, on its way to a point on a koi.
@@ -43,6 +45,8 @@ type mote struct {
 	n          int     // the joint it flows to
 	f          float64 // and how far on towards the next one, 0 to 1
 	u          float64 // and how far across the body there, -1 to 1
+	fin        int8    // or a fin instead: 1 and 2 the paddles, 3 the tail
+	ft, fo     float64 // how far out along the fin, and across it
 	tag        int8
 	start, dur float64
 	curl       float64 // how far it swings out on the way, in path lengths
@@ -240,9 +244,9 @@ func (p *pond) startIntro() {
 	in.release = make([]float64, n)
 	in.centre = make([]pt, n)
 	in.splashed = make([]bool, n)
-	in.sum = make([]float64, n)
 	in.count = make([]int, n)
-	in.shown = make([]float64, n)
+	in.first = make([]float64, n)
+	in.last = make([]float64, n)
 
 	var cum [joints]float64
 	total := 0.0
@@ -289,6 +293,8 @@ func (p *pond) startIntro() {
 			along, across float64
 			j             int
 			f, u          float64
+			fin           int8
+			ft, fo        float64
 		}
 		m := len(g)
 		targets := make([]spot, m)
@@ -301,6 +307,19 @@ func (p *pond) startIntro() {
 			u := p.rng.Float64()*2 - 1
 			f := p.rng.Float64()
 			targets[t] = spot{along: -float64(j) - f, across: u, j: j, f: f, u: u}
+			// About one in six goes to a fin or the tail, so the koi is
+			// built whole from the pieces.
+			if r := p.rng.Float64(); r < 0.16 {
+				ft, fo := p.rng.Float64(), p.rng.Float64()*2-1
+				switch {
+				case r < 0.065:
+					targets[t] = spot{along: -2.5 - ft, across: -1.3 - ft, fin: 1, ft: ft, fo: fo}
+				case r < 0.13:
+					targets[t] = spot{along: -2.5 - ft, across: 1.3 + ft, fin: 2, ft: ft, fo: fo}
+				default:
+					targets[t] = spot{along: -12.5 - ft, across: fo * 0.5, fin: 3, ft: ft, fo: fo}
+				}
+			}
 		}
 		sources := make([]spot, m)
 		for s, q := range g {
@@ -326,13 +345,22 @@ func (p *pond) startIntro() {
 			for s := lo; s < hi; s++ {
 				h := home(g[sources[s].j])
 				t := targets[s]
+				tag := k.tagAt(t.j, t.u)
+				if t.fin > 0 {
+					tag = k.pat.body
+				}
 				mt := mote{
-					hx: h.x, hy: h.y, k: i, n: t.j, f: t.f, u: t.u, tag: k.tagAt(t.j, t.u),
+					hx: h.x, hy: h.y, k: i, n: t.j, f: t.f, u: t.u, fin: t.fin, ft: t.ft, fo: t.fo, tag: tag,
 					start: start + 0.8*float64(band)/float64(bands) + 0.3*p.rng.Float64(),
 					dur:   1.4 + 0.6*p.rng.Float64(),
 					curl:  curl * (0.7 + 0.6*p.rng.Float64()),
 				}
 				in.end = math.Max(in.end, mt.start+mt.dur)
+				land := mt.start + mt.dur
+				if in.count[i] == 0 || land < in.first[i] {
+					in.first[i] = land
+				}
+				in.last[i] = math.Max(in.last[i], land)
 				in.motes = append(in.motes, mt)
 				in.count[i]++
 			}
@@ -381,23 +409,15 @@ func smooth(v float64) float64 {
 func (p *pond) stepIntro(dt float64) {
 	in := p.intro
 	in.t += dt
-	clear(in.sum)
-	for i := range in.motes {
-		m := &in.motes[i]
-		in.sum[m.k] += clamp((in.t-m.start)/m.dur, 0, 1)
-	}
 	for i, k := range p.koi {
 		if i >= len(in.count) || in.count[i] == 0 {
 			k.grow, k.ease = 1, 1
 			continue
 		}
-		// The koi stays hidden while its motes gather into its shape, and
-		// takes over once they have all landed.
-		if in.shown[i] == 0 && in.sum[i] >= 0.97*float64(in.count[i]) {
-			in.shown[i] = in.t
-		}
+		// Drawn whole from the first landing on, but only where motes have
+		// landed (see revealMask).
 		k.grow = 0
-		if in.shown[i] > 0 {
+		if in.t >= in.first[i] {
 			k.grow = 1
 		}
 		k.ease = smooth((in.t - in.release[i]) / 2.5)
@@ -409,8 +429,8 @@ func (p *pond) stepIntro(dt float64) {
 		}
 	}
 	done := in.t >= in.end && in.t >= in.release[len(in.release)-1]+2.5
-	for i, s := range in.shown {
-		if in.count[i] > 0 && (s == 0 || in.t < s+handOver) {
+	for i := range in.count {
+		if in.count[i] > 0 && !in.built(i) {
 			done = false
 		}
 	}
@@ -430,8 +450,7 @@ func (p *pond) moteAt(m *mote) (x, y, hw, hh, pr float64) {
 	if pr == 0 {
 		return m.hx, m.hy, in.hw, in.hh, 0
 	}
-	k := p.koi[m.k]
-	t := k.bodyPoint(m.n, m.f, m.u, p.size)
+	t := p.landing(m)
 	e := smooth(pr)
 	dx, dy := t.x-m.hx, t.y-m.hy
 	arc := math.Sin(math.Pi*e) * m.curl
@@ -474,6 +493,76 @@ func (p *pond) introShadows(ox, oy float64) {
 	}
 }
 
+// landing is where a mote lands on its koi now: a point on the body, or on a
+// paddle fin or the tail, as the koi is drawn.
+func (p *pond) landing(m *mote) pt {
+	k := p.koi[m.k]
+	if m.fin == 0 {
+		return k.bodyPoint(m.n, m.f, m.u, p.size)
+	}
+	j, s := k.j, p.size
+	if m.fin == 3 {
+		last, before := j[joints-1], j[joints-2]
+		a := math.Atan2(last.y-before.y, last.x-before.x)
+		d, o := (0.5+0.8*m.ft)*s, m.fo*0.55*s
+		return pt{last.x + math.Cos(a)*d - math.Sin(a)*o, last.y + math.Sin(a)*d + math.Cos(a)*o}
+	}
+	side := -1.0
+	if m.fin == 2 {
+		side = 1
+	}
+	a := math.Atan2(j[0].y-j[2].y, j[0].x-j[2].x) + math.Pi + side*1.25
+	d := (radii[2] + 0.6 + 2*m.ft) * s
+	o := m.fo * (1.3 - 0.6*m.ft) * s
+	return pt{j[2].x + math.Cos(a)*d - math.Sin(a)*o, j[2].y + math.Sin(a)*d + math.Cos(a)*o}
+}
+
+// built is whether koi i has closed up over all its motes.
+func (in *intro) built(i int) bool {
+	return in.count[i] > 0 && in.t >= in.last[i]+closeUp
+}
+
+// revealMask marks the pixels of koi i's shape that its landed motes have
+// uncovered: round each landing a patch grows as the mote melts, and once the
+// last has landed they all widen until the whole koi shows. Nil when it is
+// built.
+func (p *pond) revealMask(i int, s *koiShape) []bool {
+	in := p.intro
+	if in == nil || i >= len(in.count) || in.count[i] == 0 || in.built(i) {
+		return nil
+	}
+	n := s.w * s.h
+	if cap(s.mask) < n {
+		s.mask = make([]bool, n)
+	}
+	mask := s.mask[:n]
+	clear(mask)
+	closing := 6 * p.size * smooth((in.t-in.last[i])/closeUp)
+	for mi := range in.motes {
+		m := &in.motes[mi]
+		land := m.start + m.dur
+		if m.k != i || in.t < land {
+			continue
+		}
+		r := 2.3*p.size*smooth((in.t-land)/melt) + closing
+		c := p.landing(m)
+		x0, x1 := max(s.x0, int(c.x-r)), min(s.x0+s.w-1, int(c.x+r)+1)
+		y0, y1 := max(s.y0, int((c.y-r)/p.aspect)), min(s.y0+s.h-1, int((c.y+r)/p.aspect)+1)
+		r2 := r * r
+		for py := y0; py <= y1; py++ {
+			dy := (float64(py)+0.5)*p.aspect - c.y
+			row := (py-s.y0)*s.w - s.x0
+			for px := x0; px <= x1; px++ {
+				dx := float64(px) + 0.5 - c.x
+				if dx*dx+dy*dy <= r2 {
+					mask[row+px] = true
+				}
+			}
+		}
+	}
+	return mask
+}
+
 // painted is how far the brush has painted in a pixel of the wordmark, 0 to
 // 1: it crosses left to right in one stroke, a little later towards the
 // bottom, with a slightly ragged edge.
@@ -497,11 +586,8 @@ func (p *pond) drawIntro() {
 		c := word
 		if pr > 0 {
 			c = mix(word, pal.tags[m.tag], smooth((pr-0.15)/0.6))
-			alpha = 1
-			// It stays, part of the koi's shape, until the koi takes over.
-			if s := in.shown[m.k]; s > 0 {
-				alpha = 1 - smooth((in.t-s)/handOver)
-			}
+			// Landed, it melts into the koi growing out from under it.
+			alpha = 1 - smooth((in.t-m.start-m.dur)/melt)
 		}
 		if alpha <= 0 {
 			continue

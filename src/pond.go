@@ -341,14 +341,21 @@ func (p *pond) draw() {
 	if p.intro != nil {
 		p.introShadows(sx*2.2, sy*2.2)
 	}
-	// In the intro a koi stays hidden while the letters' motes gather into
-	// its shape, and shows whole once they have landed.
+	// In the intro a koi shows only where the letters' motes have landed
+	// on it (revealMask).
 	for _, k := range order {
 		if k.grow < minGrow {
 			continue
 		}
 		off := 0.5 + 1.0*(1-k.depth)
-		p.castKoiShadow(p.shape(k), sx*off, sy*off, float32(k.depth))
+		s := p.shape(k)
+		s.masked = false
+		if p.intro != nil {
+			if mask := p.revealMask(slices.Index(p.koi, k), s); mask != nil {
+				s.mask, s.masked = mask, true
+			}
+		}
+		p.castKoiShadow(s, sx*off, sy*off, float32(k.depth))
 	}
 	for _, k := range order {
 		if k.grow >= minGrow {

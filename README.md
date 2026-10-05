@@ -1,6 +1,6 @@
 # Koi Screensaver
 
-Koi as your Omarchy screensaver. It opens with the Omarchy wordmark painted on to the water in one brush stroke, until the letters break apart and their pieces gather into the shape of a koi that swims away, either into a quiet pond or into a slow chase round a lily pad.
+Koi as your Omarchy screensaver. It opens with the Omarchy wordmark painted on to the water in one brush stroke, until the letters break apart and their pieces stream over and build a koi, which grows out from wherever they land and swims away, either into a quiet pond or into a slow chase round a lily pad.
 
 Everything is coloured from your current Omarchy theme, so the koi match your desktop: ink koi on rice paper under a light theme, pale koi in dark water under a dark one.
 

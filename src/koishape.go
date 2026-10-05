@@ -14,6 +14,8 @@ type koiShape struct {
 	x0, y0, w, h int       // the pixels it covers
 	sil, patch   []float32 // the whole silhouette, and the patches
 	sheen        []float32 // a gold koi's stripe; nil for none
+	mask         []bool    // in the intro, the part uncovered so far
+	masked       bool
 	patchTag     int8
 	eyes         [2]pt
 	eyeR         float64 // 0 while the koi is too small for eyes
@@ -235,7 +237,7 @@ func (p *pond) castKoiShadow(s *koiShape, ox, oy float64, d float32) {
 			continue
 		}
 		for x := 0; x < s.w; x++ {
-			if s.sil[y*s.w+x] >= 0 {
+			if s.sil[y*s.w+x] >= 0 || (s.masked && !s.mask[y*s.w+x]) {
 				continue
 			}
 			tx := s.x0 + x + sx
@@ -254,7 +256,7 @@ func (p *pond) fillKoi(s *koiShape, body int8, d float32) {
 		row := (s.y0+y)*p.pw + s.x0
 		for x := 0; x < s.w; x++ {
 			l := y*s.w + x
-			if s.sil[l] >= 0 {
+			if s.sil[l] >= 0 || (s.masked && !s.mask[l]) {
 				continue
 			}
 			t := body
@@ -271,6 +273,12 @@ func (p *pond) fillKoi(s *koiShape, body int8, d float32) {
 	if s.eyeR > 0 {
 		for _, e := range s.eyes {
 			p.fill(e.x, e.y, s.eyeR, func(i int, _, _ float64) {
+				if s.masked {
+					l := (i/p.pw-s.y0)*s.w + i%p.pw - s.x0
+					if l < 0 || l >= len(s.mask) || !s.mask[l] {
+						return
+					}
+				}
 				if p.pal.tags[p.tag[i]].lum() < 0.35 {
 					p.tag[i] = tagEyePale
 				} else {
