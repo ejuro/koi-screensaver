@@ -433,13 +433,14 @@ func (p *pond) shadePixel(i int) {
 		}
 	case t < firstSurface:
 		// Shaded by whatever passes above, a pad or a shallower koi,
-		// and crossed by the ripples on the surface.
+		// and crossed by the ripples on the surface, which lie over the
+		// koi much as they do over the open water.
 		c = pal.tags[t]
 		if p.shade[i] < p.depth[i]-0.01 {
 			c = mix(c, pal.koiShadow, 0.3)
 		}
 		if h > 0 {
-			c = mix(c, pal.ripple, math.Min(h, 1)*0.18)
+			c = mix(c, pal.ripple, math.Min(h, 1)*0.42)
 		}
 	default:
 		c = pal.tags[t]
