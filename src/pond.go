@@ -353,35 +353,11 @@ func (p *pond) draw() {
 	}
 
 	pal := &p.pal
-	for i, t := range p.tag {
-		h := float64(p.height[i])
-		var c rgb
-		switch {
-		case t == tagWater:
-			c = p.base[i]
-			if !math.IsInf(float64(p.shade[i]), 1) {
-				c = mix(c, pal.shadow, 0.55)
-			}
-			if h > 0 {
-				c = mix(c, pal.ripple, math.Min(h, 1)*0.5)
-			} else if h < 0 {
-				c = mix(c, pal.trough, math.Min(-h, 1)*0.5)
-			}
-		case t < firstSurface:
-			// Shaded by whatever passes above, a pad or a shallower koi,
-			// and crossed by the ripples on the surface.
-			c = pal.tags[t]
-			if p.shade[i] < p.depth[i]-0.01 {
-				c = mix(c, pal.koiShadow, 0.3)
-			}
-			if h > 0 {
-				c = mix(c, pal.ripple, math.Min(h, 1)*0.18)
-			}
-		default:
-			c = pal.tags[t]
+	inParallel(len(p.tag), func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			p.shadePixel(i)
 		}
-		p.out[i] = c
-	}
+	})
 	if p.fade < 1 {
 		f := p.fade * p.fade * (3 - 2*p.fade)
 		for i, c := range p.out {
@@ -391,6 +367,39 @@ func (p *pond) draw() {
 	if p.intro != nil {
 		p.drawIntro()
 	}
+}
+
+// shadePixel gives pixel i its final colour from what was drawn there.
+func (p *pond) shadePixel(i int) {
+	pal := &p.pal
+	h := float64(p.height[i])
+	t := p.tag[i]
+	var c rgb
+	switch {
+	case t == tagWater:
+		c = p.base[i]
+		if !math.IsInf(float64(p.shade[i]), 1) {
+			c = mix(c, pal.shadow, 0.55)
+		}
+		if h > 0 {
+			c = mix(c, pal.ripple, math.Min(h, 1)*0.5)
+		} else if h < 0 {
+			c = mix(c, pal.trough, math.Min(-h, 1)*0.5)
+		}
+	case t < firstSurface:
+		// Shaded by whatever passes above, a pad or a shallower koi,
+		// and crossed by the ripples on the surface.
+		c = pal.tags[t]
+		if p.shade[i] < p.depth[i]-0.01 {
+			c = mix(c, pal.koiShadow, 0.3)
+		}
+		if h > 0 {
+			c = mix(c, pal.ripple, math.Min(h, 1)*0.18)
+		}
+	default:
+		c = pal.tags[t]
+	}
+	p.out[i] = c
 }
 
 func (p *pond) drawRings() {

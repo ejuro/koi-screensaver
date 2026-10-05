@@ -166,7 +166,10 @@ func run(screensaver, intro bool, fps int, seed uint64) error {
 	}
 	invalidate()
 
-	dt := 1 / float64(fps)
+	// Move by the time that really passed, so a frame that runs late (a big
+	// pond at a small font) doesn't play the pond in slow motion. Capped,
+	// so a stall doesn't make the koi jump.
+	last := time.Now()
 	tick := time.NewTicker(time.Second / time.Duration(fps))
 	defer tick.Stop()
 	var buf []byte
@@ -190,7 +193,9 @@ func run(screensaver, intro bool, fps int, seed uint64) error {
 				out.WriteString("\x1b[2J")
 			}
 			invalidate()
-		case <-tick.C:
+		case now := <-tick.C:
+			dt := min(now.Sub(last).Seconds(), 3/float64(fps))
+			last = now
 			p.fade = math.Min(1, p.fade+dt/fadeSeconds)
 			p.step(dt)
 			p.draw()

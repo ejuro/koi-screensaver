@@ -42,7 +42,7 @@ The pond redraws at 20 frames per second and only sends the parts of the screen 
 
 Omarchy with its shell, and Ghostty, Alacritty or foot as your terminal. kitty is supported too but hasn't been tested yet. Ready-built programs for x86_64 and aarch64 are included, so nothing has to be compiled.
 
-The pond is drawn with Unicode sextant characters in a terminal at font size 9, which is finer than Omarchy's screensaver uses. To change that, set `KOI_POND_FONT_SIZE` in your environment.
+The pond is drawn with Unicode sextant characters in a terminal at font size 5, which is much finer than Omarchy's screensaver uses. To change that, set `KOI_POND_FONT_SIZE` in your environment.
 
 ## Building
 

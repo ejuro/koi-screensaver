@@ -6,7 +6,9 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
+	"sync"
 )
 
 type col8 [3]uint8
@@ -25,15 +27,34 @@ type cell struct {
 // cells splits each cell's six pixels into the two colours that fit them
 // best, trying every way to split them.
 func (p *pond) cells(dst []cell) {
-	var px [6]rgb
-	for row := 0; row < p.rows; row++ {
-		for c := 0; c < p.cols; c++ {
-			for i := range 6 {
-				px[i] = p.out[(row*3+i/2)*p.pw+c*2+i%2]
+	inParallel(p.rows, func(lo, hi int) {
+		var px [6]rgb
+		for row := lo; row < hi; row++ {
+			for c := 0; c < p.cols; c++ {
+				for i := range 6 {
+					px[i] = p.out[(row*3+i/2)*p.pw+c*2+i%2]
+				}
+				dst[row*p.cols+c] = fit(px)
 			}
-			dst[row*p.cols+c] = fit(px)
 		}
+	})
+}
+
+// inParallel splits 0..n into a band per core (at most 8) and runs f on
+// each at once. A big pond at a small font is too much work for one core
+// at full speed.
+func inParallel(n int, f func(lo, hi int)) {
+	parts := min(runtime.NumCPU(), 8, n)
+	if parts <= 1 {
+		f(0, n)
+		return
 	}
+	var wg sync.WaitGroup
+	for k := range parts {
+		lo, hi := n*k/parts, n*(k+1)/parts
+		wg.Go(func() { f(lo, hi) })
+	}
+	wg.Wait()
 }
 
 func dist2(a, b rgb) float64 {

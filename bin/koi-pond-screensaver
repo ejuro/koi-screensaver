@@ -29,7 +29,7 @@ esac
 
 # A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
 # their size on screen and are just drawn more smoothly.
-font=${KOI_POND_FONT_SIZE:-9}
+font=${KOI_POND_FONT_SIZE:-5}
 
 hypr_focus_monitor() {
   hyprctl dispatch "hl.dsp.focus({ monitor = \"$1\" })" >/dev/null 2>&1 || hyprctl dispatch focusmonitor "$1" >/dev/null
