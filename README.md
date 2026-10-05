@@ -1,8 +1,14 @@
 # Koi Screensaver
 
-A theme-coloured koi pond for Omarchy. The Omarchy wordmark breaks into pieces that become swimming koi. Choose a quiet **Pond** or two koi circling a lily pad in **Koi chase**.
+Two theme-coloured koi screensaver scenes for Omarchy. The Omarchy wordmark breaks into pieces that become swimming koi. Choose a quiet **Pond** or two koi circling a lily pad in **Koi chase**.
 
-![Koi drifting between lily pads](preview.png)
+**Pond** — koi drifting between lily pads.
+
+![Pond scene](preview.png)
+
+**Koi chase** — two koi circling a lily pad.
+
+![Koi chase scene](chase.png)
 
 ## Install
 
@@ -12,7 +18,7 @@ omarchy plugin add https://github.com/ejuro/koi-screensaver.git --enable
 
 Enabling Koi replaces the stock visual screensaver by default. **Locking and authentication remain Omarchy's responsibility.**
 
-Requires Omarchy's Quickshell shell and Ghostty, Alacritty, foot or kitty. Tested with Omarchy 4.0.4 and Ghostty 1.3.1 on x86_64; other terminals and the included aarch64 build have not been runtime-tested. See [validation details](tests/VALIDATION.md) for exact versions and test coverage.
+Requires Omarchy's Quickshell shell and Ghostty, Alacritty, foot or kitty. Tested with Omarchy 4.0.4 and Ghostty 1.3.1 on x86_64; other terminals and the included aarch64 build have not been runtime-tested.
 
 ## Use
 
@@ -31,29 +37,24 @@ For the optional System → Screensaver menu shortcut, add this entry inside `~/
 "system.screensaver": {"icon":"󱄄","label":"Screensaver","action":"omarchy-shell koi-screensaver start"},
 ```
 
-## Update and remove
+## Update
 
 ```sh
 omarchy plugin update io.github.ejuro.koi-screensaver
+```
+
+## Remove
+
+```sh
 omarchy plugin remove io.github.ejuro.koi-screensaver
 ```
 
 Normal removal restores the stock screensaver if Koi disabled it. Remove the optional menu entry yourself. Ownership records and the exit log remain under `${XDG_STATE_HOME:-$HOME/.local/state}` as `koi-screensaver/` and `koi-screensaver.log`; you can delete them after removal.
 
-A crash or forced kill can skip restoration. After disabling/removing Koi, if the stock screensaver should be enabled, remove a leftover `~/.local/state/omarchy/toggles/screensaver-off`. Keep it if you deliberately disabled the stock saver. If the cursor remains hidden:
+After a crash, removal may leave the stock screensaver disabled. If you want it enabled, remove a leftover `~/.local/state/omarchy/toggles/screensaver-off`. Keep it if you deliberately disabled the stock saver. If the cursor remains hidden:
 
 ```sh
 hyprctl eval 'hl.config({ cursor = { invisible = false } })' || hyprctl keyword cursor:invisible false
-```
-
-## Build
-
-Go 1.27.1; dependency: `golang.org/x/sys`. Runtime helpers are supplied by Omarchy: `hyprctl`, `jq`, `socat`, `xdg-terminal-exec`, `flock` and standard shell utilities.
-
-```sh
-./build.sh                 # Rebuild both architectures
-(cd src && go test ./...)
-bash tests/launcher.sh
 ```
 
 [MIT License](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES) · [Security](SECURITY.md)
