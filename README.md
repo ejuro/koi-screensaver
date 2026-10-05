@@ -16,7 +16,7 @@ Two theme-coloured koi screensaver scenes for Omarchy. The Omarchy wordmark brea
 omarchy plugin add https://github.com/ejuro/koi-screensaver.git --enable
 ```
 
-Enabling Koi replaces the stock visual screensaver by default. **Locking and authentication remain Omarchy's responsibility.**
+Koi replaces Omarchy's default screensaver only while the plugin is enabled and **Use as screensaver** is on (the default). Turning that switch off or disabling/removing the plugin restores the default saver, unless you had disabled it yourself. **Locking and authentication remain Omarchy's responsibility.**
 
 Requires Omarchy's Quickshell shell and Ghostty, Alacritty, foot or kitty. Tested with Omarchy 4.0.4 and Ghostty 1.3.1 on x86_64; other terminals and the included aarch64 build have not been runtime-tested.
 
