@@ -267,9 +267,6 @@ func (p *pond) startIntro() {
 		k.heading, k.wander = heading, heading
 		k.wanderT = 3 + p.rng.Float64()*3
 		k.burst = 0.6
-		k.depth = 0.15 + 0.2*p.rng.Float64()
-		k.depthGoal = k.depth
-		k.depthT = 6 + p.rng.Float64()*4
 		k.grow, k.ease = 0, 0
 
 		// Match the letter's pixels to points on the koi, front to front

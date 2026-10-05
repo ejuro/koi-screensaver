@@ -35,25 +35,23 @@ var patterns = []pattern{
 }
 
 type koi struct {
-	j         [joints]pt
-	heading   float64
-	speed     float64
-	cruise    float64
-	burst     float64
-	burstT    float64
-	wander    float64
-	wanderT   float64
-	phase     float64
-	stroke    float64
-	depth     float64
-	depthGoal float64
-	depthT    float64
-	pat       pattern
-	grow      float64 // 1 when whole; less while the intro gathers it up
-	ease      float64 // 1 when swimming freely; less while it starts to
-	slot      float64 // the chase: its place on the circle, behind the leader
-	flick     float64 // the chase: seconds into a tail flick, 0 for none
-	shapeBuf  *koiShape
+	j        [joints]pt
+	heading  float64
+	speed    float64
+	cruise   float64
+	burst    float64
+	burstT   float64
+	wander   float64
+	wanderT  float64
+	phase    float64
+	stroke   float64
+	depth    float64 // how deep it swims, 0 at the surface to 1 at the bottom; it keeps to it
+	pat      pattern
+	grow     float64 // 1 when whole; less while the intro gathers it up
+	ease     float64 // 1 when swimming freely; less while it starts to
+	slot     float64 // the chase: its place on the circle, behind the leader
+	flick    float64 // the chase: seconds into a tail flick, 0 for none
+	shapeBuf *koiShape
 }
 
 func (p *pond) newKoi(pat pattern) *koi {
@@ -66,8 +64,6 @@ func (p *pond) newKoi(pat pattern) *koi {
 	k.cruise = 0.75 + 0.35*p.rng.Float64()
 	k.speed = k.cruise * p.baseSpeed()
 	k.phase = p.rng.Float64() * 6.28
-	k.depth = p.rng.Float64()
-	k.depthGoal = k.depth
 	k.burstT = 4 + p.rng.Float64()*12
 	for n := range joints {
 		d := seg * p.size * float64(n)
@@ -154,14 +150,6 @@ func (p *pond) swim(k *koi, dt float64) {
 	k.j[0].x += math.Cos(k.heading) * k.speed * dt
 	k.j[0].y += math.Sin(k.heading) * k.speed * dt
 	p.follow(k)
-
-	// Each koi drifts between the bottom and just under the surface.
-	k.depthT -= dt
-	if k.depthT <= 0 {
-		k.depthGoal = p.rng.Float64()
-		k.depthT = 8 + p.rng.Float64()*14
-	}
-	k.depth += (k.depthGoal - k.depth) * math.Min(1, dt*0.25)
 }
 
 // follow drags the body after the head, but a koi's spine only bends so far.

@@ -67,7 +67,7 @@ func (p *pond) setupChase() {
 	p.koi = []*koi{p.newKoi(patterns[1]), p.newKoi(patterns[0])}
 	for i, k := range p.koi {
 		k.slot = float64(i) * math.Pi
-		k.depth, k.depthGoal = 0.3, 0.3
+		k.depth = 0.3
 		k.stroke = 0.45
 		// Start in place on the circle, the body laid along it.
 		a := c.theta + k.slot

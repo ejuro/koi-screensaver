@@ -114,8 +114,14 @@ func newPond(cols, rows int, aspect float64, pal palette, seed uint64, scene str
 		// Four or five on a wide screen: few enough that the terminal
 		// isn't redrawing every line of the screen every frame.
 		count := int(clamp(math.Round(p.w*p.h/(18*p.size)/(18*p.size)/9), 3, 5))
+		// Each koi keeps to its own depth, spread from just under the
+		// surface to near the bottom, so one that swims under another
+		// always does.
+		depths := p.rng.Perm(count)
 		for i := range count {
-			p.koi = append(p.koi, p.newKoi(patterns[i%len(patterns)]))
+			k := p.newKoi(patterns[i%len(patterns)])
+			k.depth = 0.1 + 0.8*float64(depths[i])/float64(max(1, count-1))
+			p.koi = append(p.koi, k)
 		}
 		for range 3 {
 			p.petals = append(p.petals, &petal{
