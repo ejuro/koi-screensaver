@@ -56,7 +56,7 @@ type koi struct {
 	ease      float64 // 1 when swimming freely; less while it starts to
 }
 
-func (p *pond) newKoi(pat pattern, i int) *koi {
+func (p *pond) newKoi(pat pattern) *koi {
 	k := &koi{pat: pat, grow: 1, ease: 1}
 	m := 18 * p.size
 	x := m + p.rng.Float64()*math.Max(1, p.w-2*m)

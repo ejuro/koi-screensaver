@@ -40,14 +40,15 @@ type mote struct {
 
 type lpx struct{ x, y int }
 
-// logoBits reads Omarchy's wordmark, the one its own screensaver shows, as a
-// bitmap: each character holds two pixels, one above the other.
+// logoBits reads the text Omarchy's own screensaver shows, its wordmark unless
+// the user has rebranded it, as a bitmap: each character holds two pixels,
+// one above the other.
 func logoBits() [][]bool {
-	var paths []string
+	home, _ := os.UserHomeDir()
+	paths := []string{filepath.Join(home, ".config/omarchy/branding/screensaver.txt")}
 	if d := os.Getenv("OMARCHY_PATH"); d != "" {
 		paths = append(paths, filepath.Join(d, "logo.txt"))
 	}
-	home, _ := os.UserHomeDir()
 	paths = append(paths, filepath.Join(home, ".local/share/omarchy/logo.txt"), "/usr/share/omarchy/logo.txt")
 	for _, path := range paths {
 		b, err := os.ReadFile(path)
@@ -237,6 +238,9 @@ func (p *pond) startIntro() {
 		cum[j] = total
 	}
 	for i, g := range groups {
+		if len(g) == 0 {
+			continue // a letter too small to share with every koi it was given
+		}
 		k := p.koi[i]
 		var c pt
 		for _, q := range g {

@@ -110,6 +110,7 @@ Item {
 
   // Watch the directory, since the stay-awake file comes and goes.
   FileView {
+    id: indicatorsWatcher
     path: root.indicatorsDir
     watchChanges: true
     printErrors: false
@@ -118,10 +119,13 @@ Item {
 
   Process {
     id: stayAwakeProbe
-    command: ["bash", "-c", '[[ -f "$1/stay-awake" ]] && echo yes || echo no', "bash", root.indicatorsDir]
+    // Make sure the directory exists, then watch it again: a watch set up
+    // before Omarchy first creates it would never fire.
+    command: ["bash", "-c", 'mkdir -p "$1"; [[ -f "$1/stay-awake" ]] && echo yes || echo no', "bash", root.indicatorsDir]
     stdout: SplitParser {
       onRead: function(line) { root.stayAwake = String(line).trim() === "yes" }
     }
+    onExited: indicatorsWatcher.reload()
   }
 
   FileView {

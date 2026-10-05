@@ -19,6 +19,14 @@ pgrep -f '[o]rg.omarchy.screensaver' >/dev/null && exit 0
 focused=$(omarchy-hyprland-monitor-focused)
 terminal=$(xdg-terminal-exec --print-id)
 
+case $terminal in
+*Alacritty* | *ghostty* | *foot* | *kitty*) ;;
+*)
+  omarchy-notification-send -g 󰈺 "Koi Pond only runs in Alacritty, Foot, Ghostty, or Kitty" 2>/dev/null
+  exit 1
+  ;;
+esac
+
 # A smaller font than Omarchy's 18 gives the pond finer pixels; the koi keep
 # their size on screen and are just drawn more smoothly.
 font=${KOI_POND_FONT_SIZE:-9}
@@ -30,7 +38,7 @@ hypr_focus_monitor() {
 hypr_exec() {
   local command
   printf -v command '%q ' "$@"
-  hyprctl dispatch "hl.dsp.exec_cmd([[$command]])" >/dev/null 2>&1 || hyprctl dispatch exec -- bash -lc "$command" >/dev/null
+  hyprctl dispatch "hl.dsp.exec_cmd([[$command]])" >/dev/null 2>&1 || hyprctl dispatch exec -- "bash -lc $(printf %q "$command")" >/dev/null
 }
 
 # Listen for the new window before opening it, so a fast terminal can't map
@@ -58,7 +66,7 @@ for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
   *kitty*)
     hypr_exec kitty --class=org.omarchy.screensaver --override font_size=$font --override window_padding_width=0 -e "$pond" --screensaver
     ;;
-  *)
+  *ghostty*)
     hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size="$font" -e "$pond" --screensaver
     ;;
   esac

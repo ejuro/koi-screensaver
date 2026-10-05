@@ -87,7 +87,7 @@ func newPond(cols, rows int, aspect float64, pal palette, seed uint64) *pond {
 	p.placePads()
 	count := int(clamp(math.Round(p.w*p.h/(18*p.size)/(18*p.size)/6), 3, 8))
 	for i := range count {
-		p.koi = append(p.koi, p.newKoi(patterns[i%len(patterns)], i))
+		p.koi = append(p.koi, p.newKoi(patterns[i%len(patterns)]))
 	}
 	for range 3 {
 		p.petals = append(p.petals, &petal{
