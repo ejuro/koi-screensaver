@@ -113,14 +113,11 @@ func aspectOf(cw, ch int) float64 {
 	return (float64(ch) / 3) / (float64(cw) / 2)
 }
 
-var screensaverMode bool
-
 func run(screensaver, intro bool, scene string, fps float64, seed uint64) error {
 	if math.IsNaN(fps) || math.IsInf(fps, 0) {
 		fps = 15
 	}
 	fps = clamp(fps, 1, 60)
-	screensaverMode = screensaver
 	fd := int(os.Stdin.Fd())
 	old, err := unix.IoctlGetTermios(fd, unix.TCGETS)
 	if err != nil {
@@ -154,12 +151,10 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		}
 	}()
 
-	// Why it closed, for the log (KOI_SCREENSAVER_LOG, or ~/.local/state/koi-screensaver.log
-	// as the screensaver).
-	quit := make(chan string, 1)
-	stop := func(why string) {
+	quit := make(chan struct{}, 1)
+	stop := func() {
 		select {
-		case quit <- why:
+		case quit <- struct{}{}:
 		default:
 		}
 	}
@@ -172,12 +167,12 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		for {
 			n, err := os.Stdin.Read(buf)
 			if err != nil {
-				stop("stdin closed")
+				stop()
 				return
 			}
 			// Ignore what arrives while the window is still settling.
 			if n > 0 && time.Since(start) > 700*time.Millisecond {
-				stop("input: " + inputKind(buf[:n]))
+				stop()
 				return
 			}
 		}
@@ -186,7 +181,7 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		go func() {
 			for range time.Tick(time.Second) {
 				if time.Since(start) > 2*time.Second && !screensaverFocused() {
-					stop("lost focus")
+					stop()
 					return
 				}
 			}
@@ -201,7 +196,6 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 		cols, rows, cw, ch = winsize(fd)
 	}
 	if err := checkGrid(cols, rows); err != nil {
-		logf("quit: %v", err)
 		return err
 	}
 	pal := newPalette(themeColors())
@@ -228,18 +222,15 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 	var buf []byte
 	for {
 		select {
-		case why := <-quit:
-			logf("quit: %s", why)
+		case <-quit:
 			return nil
 		case s := <-sig:
 			if s != unix.SIGWINCH {
-				logf("quit: %v", s)
 				return nil
 			}
 			c, r, w, h := winsize(fd)
 			if c != cols || r != rows {
 				if err := checkGrid(c, r); err != nil {
-					logf("quit: %v", err)
 					return err
 				}
 				cols, rows = c, r
@@ -259,7 +250,6 @@ func run(screensaver, intro bool, scene string, fps float64, seed uint64) error 
 			p.cells(cur)
 			buf = frame(buf[:0], cur, prev, cols)
 			if _, err := out.Write(buf); err != nil {
-				logf("quit: terminal gone: %v", err)
 				return nil
 			}
 		}
@@ -307,37 +297,4 @@ func screensaverFocused() bool {
 		return strings.Contains(string(b), screensaverClass)
 	}
 	return win.Class == screensaverClass
-}
-
-func logf(format string, args ...any) {
-	path := os.Getenv("KOI_SCREENSAVER_LOG")
-	if path == "" && screensaverMode {
-		state := os.Getenv("XDG_STATE_HOME")
-		if state == "" {
-			home, _ := os.UserHomeDir()
-			state = home + "/.local/state"
-		}
-		path = state + "/koi-screensaver.log"
-	}
-	if path == "" {
-		return
-	}
-	// A line each time it closes; start afresh rather than grow for ever.
-	flags := os.O_APPEND | os.O_CREATE | os.O_WRONLY
-	if st, err := os.Stat(path); err == nil && st.Size() > 64<<10 {
-		flags |= os.O_TRUNC
-	}
-	if f, err := os.OpenFile(path, flags, 0o600); err == nil {
-		fmt.Fprintf(f, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
-		f.Close()
-	}
-}
-
-// inputKind names what woke the screen, for the log, without the keys
-// themselves: someone waking it may already be typing their password.
-func inputKind(b []byte) string {
-	if len(b) >= 3 && b[0] == 0x1b && b[1] == '[' && (b[2] == '<' || b[2] == 'M') {
-		return "mouse"
-	}
-	return "key"
 }
