@@ -340,15 +340,18 @@ func (p *pond) draw() {
 	if p.intro != nil {
 		p.introShadows(sx*2.2, sy*2.2)
 	}
+	// A koi only shows once it is well gathered; early in the intro it is
+	// still a thin needle along its full length, and the letters streaming
+	// into it hide it anyway.
 	for _, k := range order {
-		if k.grow <= 0 {
+		if k.grow < minGrow {
 			continue
 		}
 		off := 0.5 + 1.0*(1-k.depth)
 		p.castKoiShadow(p.shape(k), sx*off, sy*off, float32(k.depth))
 	}
 	for _, k := range order {
-		if k.grow > 0 {
+		if k.grow >= minGrow {
 			p.fillKoi(k.shapeBuf, k.pat.body, float32(k.depth))
 		}
 	}
@@ -388,6 +391,9 @@ func (p *pond) draw() {
 		p.drawIntro()
 	}
 }
+
+// minGrow is how far gathered a koi has to be before it is drawn.
+const minGrow = 0.4
 
 // touches is whether a disc lies at least partly in what this frame draws.
 // Outside that, last frame's pixels stand, so a still thing there needn't be
