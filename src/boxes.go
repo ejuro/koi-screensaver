@@ -5,8 +5,7 @@ import "math"
 // Drawing only what changed. Once the pond has settled, each frame clears
 // and draws again only boxes round whatever moves, both where it was last
 // frame and where it is now; everywhere else last frame's pixels stand. The
-// still things there, the water, the pads and the lilies, only move once a
-// second, and that frame is drawn whole.
+// water, the pads and the lilies never move.
 
 // box is a block of pond pixels, x0 <= x < x1 and y0 <= y < y1, whole
 // terminal cells.

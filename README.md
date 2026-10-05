@@ -1,6 +1,6 @@
 # Koi Pond
 
-A slow, quiet koi pond as your Omarchy screensaver. It opens with the Omarchy wordmark floating on the water, until each letter breaks apart and gathers itself into a koi that swims away. Koi drift under lily pads and water lilies and cast soft shadows on the pond floor and on each other. Now and then a single raindrop falls, and a koi may come over to see whether it was food.
+A slow, quiet koi pond as your Omarchy screensaver. It opens with the Omarchy wordmark floating on the water, until each letter breaks apart and gathers itself into a koi that swims away. Koi drift under still lily pads and water lilies, past a few floating petals, and cast soft shadows on the pond floor and on each other.
 
 Everything is coloured from your current Omarchy theme, so the pond matches your desktop: ink koi on rice paper under a light theme, pale koi in dark water under a dark one.
 
@@ -10,7 +10,7 @@ Everything is coloured from your current Omarchy theme, so the pond matches your
 
 Pick one in the panel; both open with the wordmark.
 
-- **Pond**: the koi pond above, with five koi, lily pads, raindrops and petals.
+- **Pond**: the koi pond above, with five koi, lily pads and petals.
 - **Koi chase**: two koi, red and ink, circling a single lily pad in still water, always the same distance apart. Now and then one flicks its tail and leaves a little swirl in the water. It's quieter, and lighter on the computer.
 
 ## Install
@@ -49,9 +49,9 @@ It only sends the parts of the screen that changed, at up to 18 frames per secon
 |---|---|
 | Omarchy's screensaver | 65% |
 | Koi chase | 64% |
-| Pond | 78% |
+| Pond | 67% |
 
-The koi chase costs the same as Omarchy's screensaver. The pond is heavier, because something moves almost everywhere on screen at once. A larger font (see below) or a lower frame rate (`KOI_POND_FPS`) makes either cheaper. It runs only while it's on screen.
+Both scenes cost about the same as Omarchy's screensaver. A larger font (see below) or a lower frame rate (`KOI_POND_FPS`) makes either cheaper. It runs only while it's on screen.
 
 ## Requirements
 

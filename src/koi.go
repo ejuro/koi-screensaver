@@ -48,8 +48,6 @@ type koi struct {
 	depth     float64
 	depthGoal float64
 	depthT    float64
-	goal      pt
-	goalT     float64
 	pat       pattern
 	grow      float64 // 1 when whole; less while the intro gathers it up
 	ease      float64 // 1 when swimming freely; less while it starts to
@@ -134,21 +132,6 @@ func (p *pond) swim(k *koi, dt float64) {
 		}
 	}
 
-	// Drift over to where a raindrop fell, and nose at it.
-	if k.goalT > 0 {
-		k.goalT -= dt
-		dx, dy := k.goal.x-head.x, k.goal.y-head.y
-		d := math.Hypot(dx, dy)
-		if d < length*0.15 {
-			p.addRing(head.x, head.y, radii[0]*p.size, 3.2*p.size, 0.7, 2.2, 0.7*p.size)
-			k.goalT = 0
-			k.depthGoal = 0.1
-		} else if d > 0 {
-			sx += dx / d * 2.5
-			sy += dy / d * 2.5
-		}
-	}
-
 	want := math.Atan2(sy, sx)
 	// Turning radius never tighter than about half a body length.
 	maxTurn := k.speed / (0.5 * length)
@@ -162,9 +145,6 @@ func (p *pond) swim(k *koi, dt float64) {
 	}
 	k.burst *= math.Exp(-dt / 1.6)
 	goal := base * (k.cruise + k.burst)
-	if k.goalT > 0 {
-		goal *= 1.25
-	}
 	k.speed += (goal - k.speed) * math.Min(1, dt*0.9)
 	effort := k.speed/base - 0.4 + 2*k.burst
 	k.stroke += (clamp(effort, 0.35, 1.2) - k.stroke) * math.Min(1, dt*2)

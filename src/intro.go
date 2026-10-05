@@ -266,7 +266,6 @@ func (p *pond) startIntro() {
 		}
 		k.heading, k.wander = heading, heading
 		k.wanderT = 3 + p.rng.Float64()*3
-		k.goalT = 0
 		k.burst = 0.6
 		k.depth = 0.15 + 0.2*p.rng.Float64()
 		k.depthGoal = k.depth
@@ -336,7 +335,6 @@ func (p *pond) startIntro() {
 	}
 	p.intro = in
 	p.rings = p.rings[:0]
-	p.nextDrop = math.Max(p.nextDrop, in.end+3)
 }
 
 // tagAt is the colour of a koi at joint n, u of the way across its body.

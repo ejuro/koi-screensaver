@@ -34,10 +34,6 @@ type pond struct {
 	fullNext  bool
 	drawn     []box // what this frame drew, nil for all of it
 
-	nextDrop float64 // seconds until the next raindrop
-	padT     float64 // seconds until the pads next drift
-	lilyT    float64 // the time the lilies breathe at
-
 	tag    []int8
 	shade  []float32 // depth of the highest thing shading each pixel, or +Inf
 	depth  []float32 // depth of the koi drawn at each pixel
@@ -61,17 +57,15 @@ type ring struct {
 }
 
 type pad struct {
-	ax, ay, x, y, r float64
-	rot, notch      float64
-	drift           [4]float64 // phases
-	flower          float64    // flower radius, 0 for none
-	fx, fy          float64    // flower offset from the pad's centre, in pad radii
-	bloom           float64    // phase of its slow breathing
+	x, y, r    float64
+	rot, notch float64
+	flower     float64 // flower radius, 0 for none
+	fx, fy     float64 // flower offset from the pad's centre, in pad radii
 
 	// The pad's and its lily's pixels as last drawn, kept while the pad
 	// stays put, and where it was then.
 	px    []padPx
-	pxKey [5]float64
+	pxKey [4]float64
 }
 
 // padPx is one pixel of a pad or its lily, and what is there.
@@ -128,7 +122,6 @@ func newPond(cols, rows int, aspect float64, pal palette, seed uint64, scene str
 				rot: p.rng.Float64() * 6.28, spin: (p.rng.Float64() - 0.5) * 0.15, r: 1.6 * p.size,
 			})
 		}
-		p.nextDrop = 3 + p.rng.Float64()*8
 	}
 	// Let the koi straighten out and spread over the pond before the first
 	// frame.
@@ -168,7 +161,7 @@ func (p *pond) placePads() {
 			x, y := cx+math.Cos(a)*d, cy+math.Sin(a)*d
 			ok := true
 			for _, q := range placed {
-				if math.Hypot(q.ax-x, q.ay-y) < 0.82*(q.r+r) {
+				if math.Hypot(q.x-x, q.y-y) < 0.82*(q.r+r) {
 					ok = false
 					break
 				}
@@ -176,10 +169,7 @@ func (p *pond) placePads() {
 			if !ok {
 				continue
 			}
-			pd := &pad{ax: x, ay: y, x: x, y: y, r: r, rot: p.rng.Float64() * 2 * math.Pi, notch: 0.22 + 0.1*p.rng.Float64(), bloom: p.rng.Float64() * 6.28}
-			for i := range pd.drift {
-				pd.drift[i] = p.rng.Float64() * 6.28
-			}
+			pd := &pad{x: x, y: y, r: r, rot: p.rng.Float64() * 2 * math.Pi, notch: 0.22 + 0.1*p.rng.Float64()}
 			placed = append(placed, pd)
 		}
 		// A water lily on the largest pad, a little off its centre, and now
@@ -211,15 +201,6 @@ func (p *pond) onPad(x, y float64) bool {
 func (p *pond) step(dt float64) {
 	p.t += dt
 
-	// Now and then a single raindrop, never a shower; no rain in the chase.
-	if p.chase == nil {
-		p.nextDrop -= dt
-		if p.nextDrop <= 0 {
-			p.nextDrop = 5 + p.rng.Float64()*10
-			p.drop(p.rng.Float64()*p.w, p.rng.Float64()*p.h)
-		}
-	}
-
 	if p.intro != nil {
 		p.stepIntro(dt)
 	}
@@ -237,21 +218,6 @@ func (p *pond) step(dt float64) {
 		}
 	}
 
-	// The pads drift (never turning, as a pad doesn't) and the lilies
-	// breathe far slower than a pixel a second, so they move once a second, and that frame is drawn whole;
-	// the frames between only draw round what swims or floats past. The
-	// chase's pad lies still.
-	p.padT -= dt
-	if p.chase == nil && p.padT <= 0 {
-		p.padT = padEvery
-		for _, pd := range p.pads {
-			a := 0.06 * pd.r
-			pd.x = pd.ax + a*math.Sin(p.t*0.05+pd.drift[0]) + 0.4*a*math.Sin(p.t*0.13+pd.drift[1])
-			pd.y = pd.ay + a*math.Sin(p.t*0.04+pd.drift[2]) + 0.4*a*math.Sin(p.t*0.11+pd.drift[3])
-		}
-		p.lilyT = p.t
-		p.fullNext = true
-	}
 	for _, pe := range p.petals {
 		pe.x += pe.vx * dt
 		pe.y += pe.vy * dt
@@ -280,35 +246,6 @@ func (p *pond) step(dt float64) {
 		}
 	}
 	p.rings = kept
-}
-
-// drop lets a raindrop fall at (x, y): two rings spreading out, unless it
-// lands on a pad.
-func (p *pond) drop(x, y float64) {
-	if p.onPad(x, y) {
-		return
-	}
-	s := p.size
-	p.addRing(x, y, 0.3*s, 5.5*s, 1, 2.8, 0.8*s)
-	p.rings = append(p.rings, ring{x: x, y: y, r: 0, speed: 4.2 * s, amp: 0.55, age: -0.35, life: 2.4, width: 0.7 * s})
-	p.lure(x, y)
-}
-
-// lure sends the nearest koi, sometimes, to see whether a raindrop was food.
-func (p *pond) lure(x, y float64) {
-	if p.rng.Float64() > 0.45 {
-		return
-	}
-	var best *koi
-	bd := 0.4 * math.Max(p.w, p.h)
-	for _, k := range p.koi {
-		if d := math.Hypot(k.j[0].x-x, k.j[0].y-y); d < bd && k.goalT <= 0 && k.ease >= 1 {
-			best, bd = k, d
-		}
-	}
-	if best != nil {
-		best.goal, best.goalT = pt{x, y}, 6
-	}
 }
 
 // --- drawing -------------------------------------------------------------
@@ -465,9 +402,6 @@ func (p *pond) touches(cx, cy, r float64) bool {
 	return false
 }
 
-// padEvery is how often, in seconds, the pads drift and the lilies breathe.
-const padEvery = 1.0
-
 // frameBoxes is what to draw this frame: nil for the whole pond, or, once
 // it has settled, the boxes round whatever moves, both where it was last
 // frame and where it is now.
@@ -556,11 +490,10 @@ func (p *pond) drawRings() {
 	}
 }
 
-// drawPadAndLily draws a pad and the water lily on it, if any. The pads
-// only move once a second, so their pixels are worked out then and copied
-// in the frames between.
+// drawPadAndLily draws a pad and the water lily on it, if any. The pads lie
+// still, so their pixels are worked out once and copied after that.
 func (p *pond) drawPadAndLily(pd *pad) {
-	key := [5]float64{pd.x, pd.y, pd.r, pd.rot, p.lilyT}
+	key := [4]float64{pd.x, pd.y, pd.r, pd.rot}
 	if pd.px == nil || key != pd.pxKey {
 		pd.px, pd.pxKey = pd.px[:0], key
 		keep := func(i int, t int8) { pd.px = append(pd.px, padPx{int32(i), t}) }
@@ -632,14 +565,13 @@ func (p *pond) petal(pe *petal, ox, oy float64, set func(i int)) {
 func (p *pond) drawFlower(pd *pad, set func(i int, t int8)) {
 	cx := pd.x + pd.fx*pd.r
 	cy := pd.y + pd.fy*pd.r
-	breath := 0.5 + 0.5*math.Sin(p.lilyT*0.25+pd.bloom)
 	rings := []struct {
 		reach, turn float64
 		n           int
 		t           int8
 	}{
-		{pd.flower * (0.95 + 0.05*breath), pd.rot, 10, tagPetal},
-		{pd.flower * (0.66 + 0.06*breath), pd.rot + math.Pi/8, 8, tagPetalInner},
+		{pd.flower * 0.975, pd.rot, 10, tagPetal},
+		{pd.flower * 0.69, pd.rot + math.Pi/8, 8, tagPetalInner},
 	}
 	for _, ring := range rings {
 		n := float64(ring.n)

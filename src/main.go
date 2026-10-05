@@ -1,6 +1,6 @@
 // koi-pond: a slow, quiet pond for the terminal. Koi drift under lily pads
-// and water lilies, and now and then a raindrop falls. Coloured from the
-// current Omarchy theme.
+// and water lilies, and petals float by. Coloured from the current Omarchy
+// theme.
 package main
 
 import (

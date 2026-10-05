@@ -56,7 +56,7 @@ func (p *pond) setupChase() {
 	// One still pad in the middle, its notch up and to the right.
 	r := m * chasePad
 	c.padR = r
-	p.pads = []*pad{{ax: p.w / 2, ay: p.h / 2, x: p.w / 2, y: p.h / 2, r: r, rot: -0.55, notch: 0.15}}
+	p.pads = []*pad{{x: p.w / 2, y: p.h / 2, r: r, rot: -0.55, notch: 0.15}}
 
 	// Red with ink, and ink with red, as in YinYang.
 	p.koi = []*koi{p.newKoi(patterns[1]), p.newKoi(patterns[0])}
