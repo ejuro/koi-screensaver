@@ -10,8 +10,8 @@ Everything is coloured from your current Omarchy theme, so the koi match your de
 
 Pick one in the drawer; both open with the wordmark.
 
+- **Koi chase**: two koi, red and ink, circling a single lily pad in still water, always the same distance apart. Now and then one flicks its tail and leaves a little swirl in the water, and faint ripples spread round the pad.
 - **Pond** (above): five koi drift under still lily pads and water lilies, past a few floating petals, casting soft shadows on the pond floor and on each other.
-- **Koi chase**: two koi, red and ink, circling a single lily pad in still water, always the same distance apart. Now and then one flicks its tail and leaves a little swirl in the water, and faint ripples spread round the pad. It's quieter, and lighter on the computer.
 
 ## Install
 
@@ -25,11 +25,12 @@ That's all. From then on the koi appear instead of Omarchy's screensaver wheneve
 
 - **Click the fish** in the bar for its drawer:
   - **Use as screensaver**: whether the koi appear by themselves when you're idle, instead of Omarchy's screensaver.
-  - **Scene**: Pond or Koi chase.
+  - **Scene**: Koi chase or Pond.
+  - **Motion**: *Balanced*, as light as Omarchy's own screensaver, or *Smooth*, more frames a second for more CPU.
   - **Preview**: see them now. Any key or mouse movement closes it.
 - **Right-click the fish** to flip *Use as screensaver* without opening the drawer. The fish is faded while it's off.
 - In the drawer, the arrow keys move between the rows, Enter picks, Space flips the switch and `p` previews.
-- From anywhere: `omarchy-shell koi-screensaver start`, or `enable` / `disable` / `toggle` / `status`, and `omarchy-shell koi-screensaver scene chase` (or `pond`).
+- From anywhere: `omarchy-shell koi-screensaver start`, or `enable` / `disable` / `toggle` / `status`, `omarchy-shell koi-screensaver scene chase` (or `pond`), and `omarchy-shell koi-screensaver motion smooth` (or `balanced`).
 
 To open it from **Super + Escape → System → Screensaver** as well, add this line to `~/.config/omarchy/extensions/omarchy-menu.jsonc`, inside the braces. The icon and label have to be repeated, or the menu row loses them:
 
@@ -46,15 +47,18 @@ Omarchy stays in charge of idling. Your idle timeout (`idle.screensaver` in `she
 
 ## Performance
 
-It only sends the parts of the screen that changed, at up to 18 frames per second: as many as fit while each frame lasts a whole number of your monitor's refreshes, so the koi move evenly (17.1 at 120 Hz, 18 at 144 Hz, 15 at 60 Hz). Measured on a 4K, 120 Hz screen with Ghostty, terminal included, against Omarchy's own screensaver on the same machine:
+It only sends the parts of the screen that changed, and the frame rate is always a whole fraction of your monitor's refresh rate, so every frame lasts the same time and the koi move evenly. *Balanced* takes as many frames as fit under 18 a second (17.1 at 120 Hz, 18 at 144 Hz, 15 at 60 Hz); *Smooth* takes about 20 (20 at 60 and 120 Hz).
+
+Measured on a 4K, 120 Hz screen with Ghostty, terminal included, against Omarchy's own screensaver on the same machine:
 
 | | CPU (one core = 100%) |
 |---|---|
 | Omarchy's screensaver | 58–65%, depending on the effect it plays |
-| Koi chase | 65% |
-| Pond | 67% |
+| Koi chase, Balanced | 65% |
+| Pond, Balanced | 67% |
+| Either scene, Smooth | 70% |
 
-Both scenes cost about the same as Omarchy's screensaver. A larger font (see below) or a lower frame rate (`KOI_SCREENSAVER_FPS`) makes either cheaper. It runs only while it's on screen.
+On Balanced, both scenes cost about the same as Omarchy's screensaver. A larger font (see below) or a lower frame rate (`KOI_SCREENSAVER_FPS`) makes them cheaper still. It runs only while it's on screen.
 
 ## Requirements
 

@@ -35,6 +35,11 @@ Item {
   // reads it.
   property string scene: "pond"
 
+  // How smoothly they swim: "balanced", as light as Omarchy's own
+  // screensaver, or "smooth", more frames for more CPU. Kept beside the
+  // scene, where the launcher reads it.
+  property string motion: "balanced"
+
   // The same timeout as Omarchy's screensaver, read from its shell.json.
   property int screensaverSeconds: 150
 
@@ -58,6 +63,13 @@ Item {
     root.scene = s
     run(["bash", "-c", 'mkdir -p "$1" && printf "%s\\n" "$2" > "$1/scene"', "bash", root.stateDir, s])
     return s
+  }
+
+  function setMotion(value) {
+    var m = value === "smooth" ? "smooth" : "balanced"
+    root.motion = m
+    run(["bash", "-c", 'mkdir -p "$1" && printf "%s\\n" "$2" > "$1/motion"', "bash", root.stateDir, m])
+    return m
   }
 
   // Switch Omarchy's own screensaver off, unless the user already had.
@@ -95,6 +107,7 @@ Item {
     return JSON.stringify({
       onIdle: root.onIdle,
       scene: root.scene,
+      motion: root.motion,
       stayAwake: root.stayAwake,
       idle: idleMonitor.isIdle,
       timeout: idleMonitor.timeout,
@@ -148,6 +161,12 @@ Item {
   }
 
   FileView {
+    path: root.stateDir + "/motion"
+    printErrors: false
+    onLoaded: root.motion = text().trim() === "smooth" ? "smooth" : "balanced"
+  }
+
+  FileView {
     path: root.stateDir + "/idle-off"
     printErrors: false
     onLoaded: { root.onIdle = false; root.loaded = true; root.releaseOmarchyScreensaver() }
@@ -169,5 +188,6 @@ Item {
     function toggle(): string { return root.toggle() }
     function status(): string { return root.statusJson() }
     function scene(name: string): string { return root.setScene(name) }
+    function motion(name: string): string { return root.setMotion(name) }
   }
 }

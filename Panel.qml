@@ -16,10 +16,15 @@ Panel {
   readonly property bool stayAwake: svc ? svc.stayAwake === true : false
   readonly property int idleSeconds: svc ? svc.screensaverSeconds : 150
   readonly property string scene: svc && svc.scene === "chase" ? "chase" : "pond"
+  readonly property string motion: svc && svc.motion === "smooth" ? "smooth" : "balanced"
 
   readonly property var scenes: [
-    { value: "pond", label: "Pond", detail: "Five koi drifting under lily pads" },
-    { value: "chase", label: "Koi chase", detail: "Two koi circling a lily pad" }
+    { value: "chase", label: "Koi chase", detail: "Two koi circling a lily pad" },
+    { value: "pond", label: "Pond", detail: "Five koi drifting under lily pads" }
+  ]
+  readonly property var motions: [
+    { value: "balanced", label: "Balanced", detail: "As light as Omarchy's own screensaver" },
+    { value: "smooth", label: "Smooth", detail: "Smoother, uses more CPU" }
   ]
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -27,7 +32,7 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // The keyboard cursor walks these rows top to bottom.
-  readonly property var rows: ["switch", "scene:pond", "scene:chase", "preview"]
+  readonly property var rows: ["switch", "scene:chase", "scene:pond", "motion:balanced", "motion:smooth", "preview"]
   property int cursor: 0
   property bool cursorActive: false
   function at(row) { return root.cursorActive && root.rows[root.cursor] === row }
@@ -47,6 +52,7 @@ Panel {
 
   function toggleOnIdle() { if (svc) svc.toggle() }
   function setScene(value) { if (svc) svc.setScene(value) }
+  function setMotion(value) { if (svc) svc.setMotion(value) }
 
   // Close the drawer first, so the koi take focus from it.
   function preview() {
@@ -58,7 +64,8 @@ Panel {
     var row = root.rows[root.cursor]
     if (row === "switch") toggleOnIdle()
     else if (row === "preview") preview()
-    else setScene(row.split(":")[1])
+    else if (row.indexOf("scene:") === 0) setScene(row.split(":")[1])
+    else setMotion(row.split(":")[1])
   }
 
   implicitWidth: button.implicitWidth
@@ -99,7 +106,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(420))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -195,12 +202,40 @@ Panel {
 
           Repeater {
             model: root.scenes
-            SceneRow {
+            ChoiceRow {
               required property var modelData
               width: column.width
-              value: modelData.value
+              row: "scene:" + modelData.value
+              chosen: root.scene === modelData.value
               label: modelData.label
               detail: modelData.detail
+              onPicked: root.setScene(modelData.value)
+            }
+          }
+        }
+
+        PanelSeparator { foreground: root.foreground }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+
+          PanelSectionHeader {
+            text: "MOTION"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Repeater {
+            model: root.motions
+            ChoiceRow {
+              required property var modelData
+              width: column.width
+              row: "motion:" + modelData.value
+              chosen: root.motion === modelData.value
+              label: modelData.label
+              detail: modelData.detail
+              onPicked: root.setMotion(modelData.value)
             }
           }
         }
@@ -277,15 +312,16 @@ Panel {
     }
   }
 
-  // One scene to choose, ticked and highlighted when it's the one in use.
-  component SceneRow: CursorSurface {
-    id: sceneRow
-    property string value
+  // One of a few choices, ticked and highlighted when it's the one in use.
+  component ChoiceRow: CursorSurface {
+    id: choiceRow
+    property string row
+    property bool chosen
     property string label
     property string detail
-    readonly property bool chosen: root.scene === value
+    signal picked()
 
-    hasCursor: root.at("scene:" + value)
+    hasCursor: root.at(row)
     current: chosen
     foreground: root.foreground
     implicitHeight: sceneLayout.implicitHeight + Style.spacing.rowPaddingX
@@ -294,8 +330,8 @@ Panel {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onEntered: root.point("scene:" + sceneRow.value)
-      onClicked: root.setScene(sceneRow.value)
+      onEntered: root.point(choiceRow.row)
+      onClicked: choiceRow.picked()
     }
 
     RowLayout {
@@ -309,12 +345,12 @@ Panel {
 
       RowText {
         Layout.fillWidth: true
-        title: sceneRow.label
-        detail: sceneRow.detail
+        title: choiceRow.label
+        detail: choiceRow.detail
       }
 
       Text {
-        text: sceneRow.chosen ? "󰄬" : ""
+        text: choiceRow.chosen ? "󰄬" : ""
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.heading

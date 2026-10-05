@@ -36,10 +36,14 @@ font=${KOI_SCREENSAVER_FONT_SIZE:-4.5}
 scene=${KOI_SCREENSAVER_SCENE:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/scene" 2>/dev/null)}
 [[ $scene == chase ]] || scene=pond
 
-# Frames per second: as many as fit under 18 while each frame still lasts a
-# whole number of the monitor's refreshes, so the koi move evenly (17.1 at
-# 120 Hz, 18 at 144 Hz, 15 at 60 Hz). Under 18 keeps it no heavier than
-# Omarchy's own screensaver. KOI_SCREENSAVER_FPS overrides.
+# Frames per second, always a whole fraction of the monitor's refresh rate,
+# so every frame lasts the same number of refreshes and the koi move evenly.
+# Motion "balanced" (the default) takes as many as fit under 18, which keeps
+# it no heavier than Omarchy's own screensaver (17.1 at 120 Hz, 15 at 60 Hz);
+# "smooth" takes about 20 (20 at 60 and 120 Hz), for more CPU. Chosen in the
+# bar drawer; KOI_SCREENSAVER_MOTION or KOI_SCREENSAVER_FPS override it.
+motion=${KOI_SCREENSAVER_MOTION:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/koi-screensaver/motion" 2>/dev/null)}
+[[ $motion == smooth ]] || motion=balanced
 fps_for() {
   if [[ $KOI_SCREENSAVER_FPS =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     echo "$KOI_SCREENSAVER_FPS"
@@ -47,7 +51,12 @@ fps_for() {
   fi
   local hz
   hz=$(hyprctl monitors -j | jq -r --arg m "$1" '.[] | select(.name == $m) | .refreshRate')
-  awk -v hz="${hz:-60}" 'BEGIN { if (hz < 1) hz = 60; n = int(hz / 18); if (n * 18 < hz) n++; printf "%.4f\n", hz / n }'
+  awk -v hz="${hz:-60}" -v motion="$motion" 'BEGIN {
+    if (hz < 1) hz = 60
+    if (motion == "smooth") { n = int(hz / 20); if (n < 1) n = 1 }
+    else { n = int(hz / 18); if (n * 18 < hz) n++ }
+    printf "%.4f\n", hz / n
+  }'
 }
 
 hypr_focus_monitor() {
