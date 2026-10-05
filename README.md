@@ -11,7 +11,7 @@ Everything is coloured from your current Omarchy theme, so the pond matches your
 Pick one in the panel; both open with the wordmark.
 
 - **Pond**: the koi pond above, with five koi, lily pads and petals.
-- **Koi chase**: two koi, red and ink, circling a single lily pad in still water, always the same distance apart. Now and then one flicks its tail and leaves a little swirl in the water. It's quieter, and lighter on the computer.
+- **Koi chase**: two koi, red and ink, circling a single lily pad in still water, always the same distance apart. Now and then one flicks its tail and leaves a little swirl in the water, and faint ripples spread round the pad. It's quieter, and lighter on the computer.
 
 ## Install
 
@@ -47,8 +47,8 @@ It only sends the parts of the screen that changed, at up to 18 frames per secon
 
 | | CPU (one core = 100%) |
 |---|---|
-| Omarchy's screensaver | 65% |
-| Koi chase | 64% |
+| Omarchy's screensaver | 58–65%, depending on the effect it plays |
+| Koi chase | 65% |
 | Pond | 67% |
 
 Both scenes cost about the same as Omarchy's screensaver. A larger font (see below) or a lower frame rate (`KOI_POND_FPS`) makes either cheaper. It runs only while it's on screen.

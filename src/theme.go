@@ -147,9 +147,12 @@ func newPalette(c map[string]rgb) palette {
 	}
 	p.tags[tagSheen] = mix(c["yellow"], lightest, sheen)
 	green := c["green"]
-	p.tags[tagPad] = green
-	p.tags[tagPadRim] = mix(green, darkest, 0.3)
-	p.tags[tagPadVein] = mix(green, lightest, 0.14)
+	// The pad as on the Sumi wallpapers: the green a little washed into the
+	// water, a thin darker edge, paler veins.
+	pad := mix(green, bg, 0.17)
+	p.tags[tagPad] = pad
+	p.tags[tagPadRim] = mix(pad, darkest, 0.22)
+	p.tags[tagPadVein] = mix(pad, lightest, 0.2)
 	pink := mix(c["magenta"], c["red"], 0.35)
 	p.tags[tagPetal] = mix(pink, lightest, 0.35)
 	p.tags[tagPetalInner] = mix(pink, lightest, 0.65)

@@ -5,7 +5,9 @@ import "math"
 // The koi chase: two koi, red and ink, circling a lily pad in the middle of
 // still water, the same distance apart all the way round, as on the Sumi
 // koi wallpaper and in cliamp's YinYang. Now and then one flicks its tail
-// and leaves a little swirl in the water, as in YinYang.
+// and leaves a little swirl in the water, as in YinYang, and now and then
+// faint ripples spread round the pad, like the brushed arcs on the
+// wallpaper.
 //
 // Almost nothing moves but the two koi, so only the water around them, and
 // around a swirl, is drawn again each frame.
@@ -23,6 +25,8 @@ type chase struct {
 	started bool    // the chase only sets off when the koi do
 	flickT  float64 // seconds until the next tail flick
 	swirls  []swirl
+	rippleT float64 // seconds until the next ripples round the pad
+	ripples []ripple
 }
 
 // Sizes as fractions of the shorter side of the screen, from the wallpaper.
@@ -39,6 +43,7 @@ func (p *pond) setupChase() {
 	// A slow lap, about half a minute.
 	c.speed = 18 * p.size * 0.17
 	c.flickT = 6 + p.rng.Float64()*6
+	c.rippleT = 8 + p.rng.Float64()*6
 	p.chase = c
 
 	// Flat water in the theme's own background, as on the wallpaper, so
@@ -56,7 +61,7 @@ func (p *pond) setupChase() {
 	// One still pad in the middle, its notch up and to the right.
 	r := m * chasePad
 	c.padR = r
-	p.pads = []*pad{{x: p.w / 2, y: p.h / 2, r: r, rot: -0.55, notch: 0.15}}
+	p.pads = []*pad{{x: p.w / 2, y: p.h / 2, r: r, rot: -0.55, notch: 0.09, wobble: 1}}
 
 	// Red with ink, and ink with red, as in YinYang.
 	p.koi = []*koi{p.newKoi(patterns[1]), p.newKoi(patterns[0])}
@@ -104,6 +109,33 @@ func (p *pond) stepChase(dt float64) {
 			k.flick = 1e-9 // under way
 		}
 	}
+	// Now and then two or three faint arcs open round the pad and drift
+	// out, staggered, like the ones on the wallpaper.
+	c.rippleT -= dt
+	if c.rippleT <= 0 && p.intro == nil {
+		c.rippleT = 18 + p.rng.Float64()*12
+		n := 2 + p.rng.IntN(2)
+		start := p.rng.Float64() * 2 * math.Pi
+		for k := range n {
+			c.ripples = append(c.ripples, ripple{
+				r0:    c.padR * (1.16 + 0.15*float64(k)),
+				a0:    start + float64(k)*2.1 + (p.rng.Float64()-0.5)*0.8,
+				span:  1.3 + 0.9*p.rng.Float64(),
+				wob:   p.rng.Float64() * 6.28,
+				delay: 0.7 * float64(k),
+				life:  6.5,
+			})
+		}
+	}
+	keptR := c.ripples[:0]
+	for _, r := range c.ripples {
+		r.age += dt
+		if r.age < r.delay+r.life {
+			keptR = append(keptR, r)
+		}
+	}
+	c.ripples = keptR
+
 	kept := c.swirls[:0]
 	for _, w := range c.swirls {
 		w.age += dt
@@ -157,6 +189,61 @@ func (p *pond) drawSwirls() {
 				p.height[i] = max(p.height[i], v)
 			})
 		}
+	}
+}
+
+// ripple is one faint arc round the pad: it opens, drifts outwards a little
+// and fades, thickest in its middle and tapering to nothing at its ends.
+type ripple struct {
+	r0, a0, span, wob float64
+	delay, age, life  float64
+}
+
+const (
+	rippleGrow  = 0.28 // how far a ripple drifts out, in pad radii
+	rippleSteps = 6.0  // how many times a second a ripple moves on
+)
+
+// rippleReach is how far from the pad's middle a ripple can reach.
+func (p *pond) rippleReach(r ripple) float64 {
+	return r.r0 + rippleGrow*p.chase.padR + 0.02*p.chase.padR + 2
+}
+
+func (p *pond) drawRipples() {
+	c := p.chase
+	cx, cy := p.w/2, p.h/2
+	for _, r := range c.ripples {
+		// A ripple changes slowly, so it moves on only six times a second:
+		// between those steps its cells stay as they are, and the terminal
+		// has nothing new to draw there.
+		age := math.Floor(r.age*rippleSteps) / rippleSteps
+		t := (age - r.delay) / r.life
+		if t <= 0 || t >= 1 {
+			continue
+		}
+		amp := 0.75 * math.Pow(math.Sin(math.Pi*t), 1.3)
+		rad := r.r0 + rippleGrow*c.padR*smooth(t)
+		w := 1.4 // half the line's width at its thickest
+		inner := rad - 0.02*c.padR - w - 1
+		p.fill(cx, cy, p.rippleReach(r), func(i int, dx, dy float64) {
+			d := math.Sqrt(dx*dx + dy*dy)
+			if d < inner {
+				return
+			}
+			a := math.Atan2(dy, dx)
+			u := math.Mod(a-r.a0+4*math.Pi, 2*math.Pi) / r.span
+			if u >= 1 {
+				return
+			}
+			taper := math.Pow(math.Sin(math.Pi*u), 0.8)
+			ww := w * (0.35 + 0.65*taper)
+			off := math.Abs(d - rad - 0.012*c.padR*math.Sin(3*a+r.wob))
+			if off >= ww {
+				return
+			}
+			v := float32(amp * taper * (1 - (off/ww)*(off/ww)))
+			p.height[i] = max(p.height[i], v)
+		})
 	}
 }
 

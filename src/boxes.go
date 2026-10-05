@@ -70,6 +70,12 @@ func (p *pond) movingBoxes() []box {
 		for _, w := range p.chase.swirls {
 			add(w.x-e, w.y-e, w.x+e, w.y+e)
 		}
+		for _, r := range p.chase.ripples {
+			if r.age >= r.delay {
+				e := p.rippleReach(r)
+				add(p.w/2-e, p.h/2-e, p.w/2+e, p.h/2+e)
+			}
+		}
 	}
 	return out
 }

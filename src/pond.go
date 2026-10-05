@@ -58,7 +58,8 @@ type ring struct {
 
 type pad struct {
 	x, y, r    float64
-	rot, notch float64
+	rot, notch float64 // which way the notch opens, and half its angle
+	wobble     float64 // phase of the rim's unevenness
 	flower     float64 // flower radius, 0 for none
 	fx, fy     float64 // flower offset from the pad's centre, in pad radii
 
@@ -169,7 +170,7 @@ func (p *pond) placePads() {
 			if !ok {
 				continue
 			}
-			pd := &pad{x: x, y: y, r: r, rot: p.rng.Float64() * 2 * math.Pi, notch: 0.22 + 0.1*p.rng.Float64()}
+			pd := &pad{x: x, y: y, r: r, rot: p.rng.Float64() * 2 * math.Pi, notch: 0.08 + 0.04*p.rng.Float64(), wobble: p.rng.Float64() * 6.28}
 			placed = append(placed, pd)
 		}
 		// A water lily on the largest pad, a little off its centre, and now
@@ -308,6 +309,7 @@ func (p *pond) draw() {
 	p.drawRings()
 	if p.chase != nil {
 		p.drawSwirls()
+		p.drawRipples()
 	}
 
 	// The deepest koi first, so shallower ones pass over them.
@@ -320,8 +322,9 @@ func (p *pond) draw() {
 	// swimming beneath.
 	sx, sy := 0.7*p.size, 1.2*p.size
 	for _, pd := range p.pads {
-		if p.touches(pd.x+sx*2.2, pd.y+sy*2.2, pd.r) {
-			p.castShadow(pd.x+sx*2.2, pd.y+sy*2.2, pd.r*0.97, -1)
+		ox, oy := p.padShadow(pd)
+		if p.touches(pd.x+ox, pd.y+oy, pd.r) {
+			p.castShadow(pd.x+ox, pd.y+oy, pd.r*0.97, -1)
 		}
 	}
 	for _, pe := range p.petals {
@@ -352,7 +355,7 @@ func (p *pond) draw() {
 		p.petal(pe, 0, 0, func(i int) { p.tag[i] = tagPetal })
 	}
 	for _, pd := range p.pads {
-		if p.touches(pd.x, pd.y, pd.r) {
+		if p.touches(pd.x, pd.y, pd.r*padReach) {
 			p.drawPadAndLily(pd)
 		}
 	}
@@ -490,6 +493,16 @@ func (p *pond) drawRings() {
 	}
 }
 
+// padShadow is where a pad's shadow falls. In the pond the pads float high
+// over the koi, and their shadows fall well off; the chase's pad casts a
+// small, close one, as on the wallpaper.
+func (p *pond) padShadow(pd *pad) (ox, oy float64) {
+	if p.chase != nil {
+		return 0.065 * pd.r, 0.1 * pd.r
+	}
+	return 0.7 * p.size * 2.2, 1.2 * p.size * 2.2
+}
+
 // drawPadAndLily draws a pad and the water lily on it, if any. The pads lie
 // still, so their pixels are worked out once and copied after that.
 func (p *pond) drawPadAndLily(pd *pad) {
@@ -507,28 +520,40 @@ func (p *pond) drawPadAndLily(pd *pad) {
 	}
 }
 
+// drawPad draws a lily pad as on the Sumi koi wallpaper: a gently uneven
+// rim with a thin darker edge, a straight notch cut from the very centre,
+// and fine veins running out from there.
 func (p *pond) drawPad(pd *pad, set func(i int, t int8)) {
-	veins := 9.0
-	veined := pd.r > 12 // smaller pads show only speckle
-	p.fill(pd.x, pd.y, pd.r, func(i int, dx, dy float64) {
-		d := math.Sqrt(dx*dx+dy*dy) / pd.r
-		a := math.Atan2(dy, dx) - pd.rot
-		a = math.Remainder(a, 2*math.Pi)
-		if math.Abs(a) < pd.notch*(0.4+0.6*d) && d > 0.04 {
+	veins := clamp(math.Round(pd.r/4.5), 9, 19)
+	rim := math.Max(1.2, 0.05*pd.r)
+	p.fill(pd.x, pd.y, pd.r*padReach, func(i int, dx, dy float64) {
+		d := math.Sqrt(dx*dx + dy*dy)
+		a := math.Atan2(dy, dx)
+		edge := pd.r * (1 + 0.018*math.Sin(3*a+pd.wobble) + 0.012*math.Sin(7*a+2*pd.wobble) + 0.006*math.Sin(13*a))
+		if d > edge {
+			return
+		}
+		rel := math.Remainder(a-pd.rot, 2*math.Pi)
+		if math.Abs(rel) < pd.notch && d > 0.6 {
 			return
 		}
 		t := tagPad
-		if d > 0.9 {
+		if d > edge-rim {
 			t = tagPadRim
-		} else if veined && d > 0.16 && d < 0.8 {
-			va := math.Remainder(a-pd.notch, 2*math.Pi/veins)
-			if math.Abs(va)*d*pd.r < 0.45 {
+		} else if d > 0.12*pd.r && d < 0.93*pd.r {
+			// one vein runs down the middle of the notch, hidden by it,
+			// so the rest fall evenly either side
+			va := math.Remainder(rel, 2*math.Pi/veins)
+			if math.Abs(va)*d < 0.55 {
 				t = tagPadVein
 			}
 		}
 		set(i, t)
 	})
 }
+
+// padReach is how far past its radius a pad's uneven rim can reach.
+const padReach = 1.04
 
 // petalWidth is a petal's half-width along it, broad near its base and
 // pointed at its tip (from YinYang's lotus). Worked out once into a table,
