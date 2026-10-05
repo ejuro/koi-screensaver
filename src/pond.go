@@ -96,15 +96,16 @@ func newPond(cols, rows int, aspect float64, pal palette, seed uint64, scene str
 	m := math.Min(p.w, p.h)
 	p.size = math.Max(0.9, m*0.21/18)
 
-	// Deeper, darker water towards the middle of the pond.
-	for py := 0; py < p.ph; py++ {
-		for px := 0; px < p.pw; px++ {
-			dx := (float64(px)+0.5)/p.w*2 - 1
-			dy := (float64(py)+0.5)*aspect/p.h*2 - 1
-			e := clamp((1.25-math.Hypot(dx, dy))/0.95, 0, 1)
-			e = e * e * (3 - 2*e)
-			p.base[py*p.pw+px] = mix(pal.shallow, pal.deep, e)
-		}
+	// Flat water in the theme's own background, as on the wallpapers, so the
+	// fade in from the desktop is seamless.
+	for i := range p.base {
+		p.base[i] = pal.bg
+	}
+	black := rgb{0, 0, 0}
+	if pal.dark {
+		p.pal.shadow = mix(pal.bg, black, 0.45)
+	} else {
+		p.pal.shadow = mix(pal.bg, pal.tags[tagInk], 0.12)
 	}
 
 	if scene == sceneChase {
@@ -340,9 +341,8 @@ func (p *pond) draw() {
 	if p.intro != nil {
 		p.introShadows(sx*2.2, sy*2.2)
 	}
-	// A koi only shows once it is well gathered; early in the intro it is
-	// still a thin needle along its full length, and the letters streaming
-	// into it hide it anyway.
+	// In the intro a koi stays hidden while the letters' motes gather into
+	// its shape, and shows whole once they have landed.
 	for _, k := range order {
 		if k.grow < minGrow {
 			continue
@@ -392,7 +392,7 @@ func (p *pond) draw() {
 	}
 }
 
-// minGrow is how far gathered a koi has to be before it is drawn.
+// minGrow is how far grown a koi has to be before it is drawn.
 const minGrow = 0.4
 
 // touches is whether a disc lies at least partly in what this frame draws.

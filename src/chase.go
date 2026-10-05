@@ -46,18 +46,6 @@ func (p *pond) setupChase() {
 	c.rippleT = 8 + p.rng.Float64()*6
 	p.chase = c
 
-	// Flat water in the theme's own background, as on the wallpaper, so
-	// the fade in from the desktop is seamless.
-	for i := range p.base {
-		p.base[i] = p.pal.bg
-	}
-	black := rgb{0, 0, 0}
-	if p.pal.dark {
-		p.pal.shadow = mix(p.pal.bg, black, 0.45)
-	} else {
-		p.pal.shadow = mix(p.pal.bg, p.pal.tags[tagInk], 0.12)
-	}
-
 	// One still pad in the middle, its notch up and to the right.
 	r := m * chasePad
 	c.padR = r

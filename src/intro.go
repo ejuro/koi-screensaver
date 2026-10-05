@@ -9,9 +9,10 @@ import (
 	"strings"
 )
 
-// The intro: Omarchy's wordmark floats on the pond for a moment, then each
-// letter breaks into motes that stream together into a koi, and the koi
-// swim away.
+// The intro: Omarchy's wordmark is painted on to the pond in one stroke, left
+// to right, and rests a moment. Then each letter breaks into motes that
+// stream together and settle into the shape of a koi, and once they have all
+// landed the koi shows in their place and swims away.
 
 const introHold = 3.0 // seconds the wordmark rests before it breaks up
 
@@ -24,14 +25,23 @@ type intro struct {
 	splashed []bool
 	sum      []float64
 	count    []int
+	shown    []float64 // when each koi took over from its motes, or 0
 	end      float64
+	x0, x1   float64 // the wordmark's left and right, for the stroke
+	y0, y1   float64
 }
+
+const (
+	strokeTime = 1.3  // seconds the stroke takes to cross the wordmark
+	handOver   = 0.35 // seconds the motes take to fade into the koi
+)
 
 // mote is one pixel of the wordmark, on its way to a point on a koi.
 type mote struct {
 	hx, hy     float64 // its place in the wordmark
 	k          int     // the koi it becomes part of
 	n          int     // the joint it flows to
+	f          float64 // and how far on towards the next one, 0 to 1
 	u          float64 // and how far across the body there, -1 to 1
 	tag        int8
 	start, dur float64
@@ -219,6 +229,8 @@ func (p *pond) startIntro() {
 	ox := (p.pw-lw*a)/2 - minX*a
 	oy := (p.ph-lh*b)/2 - minY*b
 	in := &intro{hw: float64(a) / 2, hh: float64(b) * p.aspect / 2}
+	in.x0, in.x1 = float64(ox+minX*a), float64(ox+(maxX+1)*a)
+	in.y0, in.y1 = float64(oy+minY*b)*p.aspect, float64(oy+(maxY+1)*b)*p.aspect
 	home := func(q lpx) pt {
 		return pt{float64(ox+q.x*a) + in.hw, float64(oy+q.y*b)*p.aspect + in.hh}
 	}
@@ -230,6 +242,7 @@ func (p *pond) startIntro() {
 	in.splashed = make([]bool, n)
 	in.sum = make([]float64, n)
 	in.count = make([]int, n)
+	in.shown = make([]float64, n)
 
 	var cum [joints]float64
 	total := 0.0
@@ -275,7 +288,7 @@ func (p *pond) startIntro() {
 		type spot struct {
 			along, across float64
 			j             int
-			u             float64
+			f, u          float64
 		}
 		m := len(g)
 		targets := make([]spot, m)
@@ -286,7 +299,8 @@ func (p *pond) startIntro() {
 				j++
 			}
 			u := p.rng.Float64()*2 - 1
-			targets[t] = spot{along: -float64(j) - p.rng.Float64(), across: u, j: j, u: u}
+			f := p.rng.Float64()
+			targets[t] = spot{along: -float64(j) - f, across: u, j: j, f: f, u: u}
 		}
 		sources := make([]spot, m)
 		for s, q := range g {
@@ -313,7 +327,7 @@ func (p *pond) startIntro() {
 				h := home(g[sources[s].j])
 				t := targets[s]
 				mt := mote{
-					hx: h.x, hy: h.y, k: i, n: t.j, u: t.u, tag: k.tagAt(t.j, t.u),
+					hx: h.x, hy: h.y, k: i, n: t.j, f: t.f, u: t.u, tag: k.tagAt(t.j, t.u),
 					start: start + 0.8*float64(band)/float64(bands) + 0.3*p.rng.Float64(),
 					dur:   1.4 + 0.6*p.rng.Float64(),
 					curl:  curl * (0.7 + 0.6*p.rng.Float64()),
@@ -346,15 +360,17 @@ func (k *koi) tagAt(n int, u float64) int8 {
 }
 
 // bodyPoint is the point at joint n, u of the way across a koi drawn at size.
-func (k *koi) bodyPoint(n int, u, size float64) pt {
-	a, b := k.j[max(0, n-1)], k.j[min(joints-1, n+1)]
+func (k *koi) bodyPoint(n int, f, u, size float64) pt {
+	m := min(joints-1, n+1)
+	c := pt{k.j[n].x + (k.j[m].x-k.j[n].x)*f, k.j[n].y + (k.j[m].y-k.j[n].y)*f}
+	a, b := k.j[max(0, n-1)], k.j[min(joints-1, n+2)]
 	dx, dy := a.x-b.x, a.y-b.y
 	d := math.Hypot(dx, dy)
 	if d == 0 {
-		return k.j[n]
+		return c
 	}
-	r := u * radii[n] * size * 0.85
-	return pt{k.j[n].x - dy/d*r, k.j[n].y + dx/d*r}
+	r := u * (radii[n] + (radii[m]-radii[n])*f) * size * 0.85
+	return pt{c.x - dy/d*r, c.y + dx/d*r}
 }
 
 func smooth(v float64) float64 {
@@ -375,7 +391,15 @@ func (p *pond) stepIntro(dt float64) {
 			k.grow, k.ease = 1, 1
 			continue
 		}
-		k.grow = smooth((in.sum[i]/float64(in.count[i]) - 0.05) / 0.8)
+		// The koi stays hidden while its motes gather into its shape, and
+		// takes over once they have all landed.
+		if in.shown[i] == 0 && in.sum[i] >= 0.97*float64(in.count[i]) {
+			in.shown[i] = in.t
+		}
+		k.grow = 0
+		if in.shown[i] > 0 {
+			k.grow = 1
+		}
 		k.ease = smooth((in.t - in.release[i]) / 2.5)
 		if !in.splashed[i] && in.t >= in.release[i]-0.3 {
 			// The letter lifts off the water.
@@ -384,7 +408,13 @@ func (p *pond) stepIntro(dt float64) {
 			p.addRing(c.x, c.y, 2*p.size, 6*p.size, 0.7, 2.6, 1.0*p.size)
 		}
 	}
-	if in.t >= in.end && in.t >= in.release[len(in.release)-1]+2.5 {
+	done := in.t >= in.end && in.t >= in.release[len(in.release)-1]+2.5
+	for i, s := range in.shown {
+		if in.count[i] > 0 && (s == 0 || in.t < s+handOver) {
+			done = false
+		}
+	}
+	if done {
 		for _, k := range p.koi {
 			k.grow, k.ease = 1, 1
 		}
@@ -401,7 +431,7 @@ func (p *pond) moteAt(m *mote) (x, y, hw, hh, pr float64) {
 		return m.hx, m.hy, in.hw, in.hh, 0
 	}
 	k := p.koi[m.k]
-	t := k.bodyPoint(m.n, m.u, p.size*k.grow)
+	t := k.bodyPoint(m.n, m.f, m.u, p.size)
 	e := smooth(pr)
 	dx, dy := t.x-m.hx, t.y-m.hy
 	arc := math.Sin(math.Pi*e) * m.curl
@@ -435,11 +465,24 @@ func (p *pond) introShadows(ox, oy float64) {
 		return
 	}
 	for i := range in.motes {
-		x, y, hw, hh, pr := p.moteAt(&in.motes[i])
-		if pr < 0.8 {
+		m := &in.motes[i]
+		x, y, hw, hh, pr := p.moteAt(m)
+		// Only what the brush has painted casts a shadow.
+		if pr < 0.8 && (pr > 0 || in.painted(m) > 0.5) {
 			p.rect(x+ox, y+oy, hw, hh, func(i int) { p.shade[i] = -1 })
 		}
 	}
+}
+
+// painted is how far the brush has painted in a pixel of the wordmark, 0 to
+// 1: it crosses left to right in one stroke, a little later towards the
+// bottom, with a slightly ragged edge.
+func (in *intro) painted(m *mote) float64 {
+	across := (m.hx - in.x0) / math.Max(in.x1-in.x0, 1)
+	down := (m.hy - in.y0) / math.Max(in.y1-in.y0, 1)
+	h := math.Sin(m.hx*12.9898+m.hy*0.7) * 43758.5453
+	ragged := h - math.Floor(h)
+	return smooth((in.t - 0.15 - strokeTime*across - 0.18*down - 0.12*ragged) / 0.22)
 }
 
 // drawIntro draws the wordmark and its motes over the finished pond.
@@ -447,14 +490,18 @@ func (p *pond) drawIntro() {
 	in := p.intro
 	pal := &p.pal
 	word := pal.tags[tagInk]
-	show := smooth(in.t / 1.4)
 	for i := range in.motes {
 		m := &in.motes[i]
 		x, y, hw, hh, pr := p.moteAt(m)
-		c, alpha := word, show
+		alpha := in.painted(m)
+		c := word
 		if pr > 0 {
 			c = mix(word, pal.tags[m.tag], smooth((pr-0.15)/0.6))
-			alpha = 1 - smooth((pr-0.8)/0.2)
+			alpha = 1
+			// It stays, part of the koi's shape, until the koi takes over.
+			if s := in.shown[m.k]; s > 0 {
+				alpha = 1 - smooth((in.t-s)/handOver)
+			}
 		}
 		if alpha <= 0 {
 			continue
