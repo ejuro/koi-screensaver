@@ -49,7 +49,7 @@ It only sends the parts of the screen that changed, at up to 18 frames per secon
 |---|---|
 | Omarchy's screensaver | 65% |
 | Koi chase | 64% |
-| Pond | 170–220% |
+| Pond | 124% |
 
 The koi chase costs the same as Omarchy's screensaver. The pond is heavier, because something moves almost everywhere on screen at once. A larger font (see below) or a lower frame rate (`KOI_POND_FPS`) makes either cheaper. It runs only while it's on screen.
 

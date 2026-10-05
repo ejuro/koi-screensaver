@@ -35,6 +35,8 @@ type pond struct {
 	drawn     []box // what this frame drew, nil for all of it
 
 	nextDrop float64 // seconds until the next raindrop
+	padT     float64 // seconds until the pads next drift
+	lilyT    float64 // the time the lilies breathe at
 
 	tag    []int8
 	shade  []float32 // depth of the highest thing shading each pixel, or +Inf
@@ -43,7 +45,12 @@ type pond struct {
 	base   []rgb // the still water
 	out    []rgb
 	fitted []rgb // the pixels each cell was last fitted to
+
+	ringTab []float32 // scratch for drawRings
 }
+
+// ringStep is how finely a ring's height is tabled, in world units.
+const ringStep = 0.05
 
 type pt struct{ x, y float64 }
 
@@ -60,6 +67,17 @@ type pad struct {
 	flower          float64    // flower radius, 0 for none
 	fx, fy          float64    // flower offset from the pad's centre, in pad radii
 	bloom           float64    // phase of its slow breathing
+
+	// The pad's and its lily's pixels as last drawn, kept while the pad
+	// stays put, and where it was then.
+	px    []padPx
+	pxKey [5]float64
+}
+
+// padPx is one pixel of a pad or its lily, and what is there.
+type padPx struct {
+	i int32
+	t int8
 }
 
 type petal struct {
@@ -217,15 +235,22 @@ func (p *pond) step(dt float64) {
 		}
 	}
 
-	// The chase's pad lies still.
-	for _, pd := range p.pads {
-		if p.chase != nil {
-			break
+	// The pads drift and the lilies breathe far slower than a pixel a
+	// second, so they move once a second, and that frame is drawn whole;
+	// the frames between only draw round what swims or floats past. The
+	// chase's pad lies still.
+	p.padT -= dt
+	if p.chase == nil && p.padT <= 0 {
+		since := padEvery - p.padT
+		p.padT = padEvery
+		for _, pd := range p.pads {
+			a := 0.06 * pd.r
+			pd.x = pd.ax + a*math.Sin(p.t*0.05+pd.drift[0]) + 0.4*a*math.Sin(p.t*0.13+pd.drift[1])
+			pd.y = pd.ay + a*math.Sin(p.t*0.04+pd.drift[2]) + 0.4*a*math.Sin(p.t*0.11+pd.drift[3])
+			pd.rot += 0.004 * math.Sin(p.t*0.03+pd.drift[1]) * since * 10
 		}
-		a := 0.06 * pd.r
-		pd.x = pd.ax + a*math.Sin(p.t*0.05+pd.drift[0]) + 0.4*a*math.Sin(p.t*0.13+pd.drift[1])
-		pd.y = pd.ay + a*math.Sin(p.t*0.04+pd.drift[2]) + 0.4*a*math.Sin(p.t*0.11+pd.drift[3])
-		pd.rot += 0.004 * math.Sin(p.t*0.03+pd.drift[1]) * dt * 10
+		p.lilyT = p.t
+		p.fullNext = true
 	}
 	for _, pe := range p.petals {
 		pe.x += pe.vx * dt
@@ -391,12 +416,7 @@ func (p *pond) draw() {
 	}
 	for _, pd := range p.pads {
 		if p.touches(pd.x, pd.y, pd.r) {
-			p.drawPad(pd)
-		}
-	}
-	for _, pd := range p.pads {
-		if pd.flower > 0 {
-			p.drawFlower(pd)
+			p.drawPadAndLily(pd)
 		}
 	}
 
@@ -445,13 +465,13 @@ func (p *pond) touches(cx, cy, r float64) bool {
 	return false
 }
 
-// frameBoxes is what to draw this frame: nil for the whole pond, or, in the
-// chase once it has settled, the boxes round whatever moves, both where it
-// was last frame and where it is now.
+// padEvery is how often, in seconds, the pads drift and the lilies breathe.
+const padEvery = 1.0
+
+// frameBoxes is what to draw this frame: nil for the whole pond, or, once
+// it has settled, the boxes round whatever moves, both where it was last
+// frame and where it is now.
 func (p *pond) frameBoxes() []box {
-	if p.chase == nil {
-		return nil
-	}
 	cur := p.movingBoxes()
 	prev := p.prevBoxes
 	p.prevBoxes = cur
@@ -505,12 +525,16 @@ func (p *pond) drawRings() {
 		w := r.width
 		outer := r.r + w
 		inner := math.Max(0, r.r-3*w)
-		p.fill(r.x, r.y, outer, func(i int, dx, dy float64) {
-			d := math.Sqrt(dx*dx + dy*dy)
-			if d < inner {
-				return
-			}
-			u := d - r.r
+		// The ring's height depends only on the distance from its middle:
+		// a crest, and a shallow trough inside it. Tabled once per ring,
+		// read at each pixel.
+		n := int((outer-inner)/ringStep) + 2
+		if cap(p.ringTab) < n {
+			p.ringTab = make([]float32, n)
+		}
+		tab := p.ringTab[:n]
+		for k := range tab {
+			u := inner + float64(k)*ringStep - r.r
 			var v float64
 			if u >= -w {
 				c := math.Cos(u / w * math.Pi / 2)
@@ -518,12 +542,39 @@ func (p *pond) drawRings() {
 			} else {
 				v = -0.4 * math.Sin(math.Pi*(-u-w)/(2*w))
 			}
-			p.height[i] += float32(amp * v)
+			tab[k] = float32(amp * v)
+		}
+		p.fill(r.x, r.y, outer, func(i int, dx, dy float64) {
+			d := math.Sqrt(dx*dx + dy*dy)
+			if d < inner {
+				return
+			}
+			f := (d - inner) / ringStep
+			k := min(int(f), n-2)
+			p.height[i] += tab[k] + (tab[k+1]-tab[k])*float32(f-float64(k))
 		})
 	}
 }
 
-func (p *pond) drawPad(pd *pad) {
+// drawPadAndLily draws a pad and the water lily on it, if any. The pads
+// only move once a second, so their pixels are worked out then and copied
+// in the frames between.
+func (p *pond) drawPadAndLily(pd *pad) {
+	key := [5]float64{pd.x, pd.y, pd.r, pd.rot, p.lilyT}
+	if pd.px == nil || key != pd.pxKey {
+		pd.px, pd.pxKey = pd.px[:0], key
+		keep := func(i int, t int8) { pd.px = append(pd.px, padPx{int32(i), t}) }
+		p.drawPad(pd, keep)
+		if pd.flower > 0 {
+			p.drawFlower(pd, keep)
+		}
+	}
+	for _, q := range pd.px {
+		p.tag[q.i] = q.t
+	}
+}
+
+func (p *pond) drawPad(pd *pad, set func(i int, t int8)) {
 	veins := 9.0
 	veined := pd.r > 12 // smaller pads show only speckle
 	p.fill(pd.x, pd.y, pd.r, func(i int, dx, dy float64) {
@@ -542,15 +593,28 @@ func (p *pond) drawPad(pd *pad) {
 				t = tagPadVein
 			}
 		}
-		p.tag[i] = t
+		set(i, t)
 	})
 }
 
 // petalWidth is a petal's half-width along it, broad near its base and
-// pointed at its tip (from YinYang's lotus).
+// pointed at its tip (from YinYang's lotus). Worked out once into a table,
+// since it is asked for at every pixel of every petal.
 func petalWidth(along float64) float64 {
-	return 0.36 * math.Pow(math.Sin(math.Pi*math.Pow(along, 0.8)), 0.6)
+	f := clamp(along, 0, 1) * petalSteps
+	i := min(int(f), petalSteps-1)
+	return petalTable[i] + (petalTable[i+1]-petalTable[i])*(f-float64(i))
 }
+
+const petalSteps = 1024
+
+var petalTable = func() (t [petalSteps + 1]float64) {
+	for i := range t {
+		along := float64(i) / petalSteps
+		t[i] = 0.36 * math.Pow(math.Sin(math.Pi*math.Pow(along, 0.8)), 0.6)
+	}
+	return
+}()
 
 // petal calls set for every pixel of a loose petal, pointed at both ends.
 func (p *pond) petal(pe *petal, ox, oy float64, set func(i int)) {
@@ -565,10 +629,10 @@ func (p *pond) petal(pe *petal, ox, oy float64, set func(i int)) {
 	})
 }
 
-func (p *pond) drawFlower(pd *pad) {
+func (p *pond) drawFlower(pd *pad, set func(i int, t int8)) {
 	cx := pd.x + pd.fx*pd.r
 	cy := pd.y + pd.fy*pd.r
-	breath := 0.5 + 0.5*math.Sin(p.t*0.25+pd.bloom)
+	breath := 0.5 + 0.5*math.Sin(p.lilyT*0.25+pd.bloom)
 	rings := []struct {
 		reach, turn float64
 		n           int
@@ -585,9 +649,9 @@ func (p *pond) drawFlower(pd *pad) {
 			r := math.Hypot(dx, dy) / ring.reach
 			along, across := r*math.Cos(a), r*math.Sin(a)
 			if along > 0 && along < 1 && math.Abs(across) <= petalWidth(along)*1.15 {
-				p.tag[i] = ring.t
+				set(i, ring.t)
 			}
 		})
 	}
-	p.disc(cx, cy, math.Max(0.9, pd.flower*0.2), tagStamen)
+	p.fill(cx, cy, math.Max(0.9, pd.flower*0.2), func(i int, _, _ float64) { set(i, tagStamen) })
 }
