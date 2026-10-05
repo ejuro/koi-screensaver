@@ -38,7 +38,7 @@
         "key": "onIdle",
         "type": "boolean",
         "label": "Use as screensaver",
-        "description": "Show the koi instead of Omarchy's own screensaver when you're idle.",
+        "description": "Temporarily replace Omarchy's default screensaver with koi when you're idle.",
         "defaultValue": true
       },
       {
@@ -50,7 +50,7 @@
           "pond"
         ],
         "defaultValue": "pond",
-        "description": "chase: two koi circling a lily pad. pond: five koi drifting under lily pads."
+        "description": "chase: two koi circling a lily pad. pond: four koi drifting under lily pads."
       },
       {
         "key": "motion",

@@ -20,7 +20,7 @@ Panel {
 
   readonly property var scenes: [
     { value: "chase", label: "Koi chase", detail: "Two koi circling a lily pad" },
-    { value: "pond", label: "Pond", detail: "Five koi drifting under lily pads" }
+    { value: "pond", label: "Pond", detail: "Four koi drifting under lily pads" }
   ]
   readonly property var motions: [
     { value: "balanced", label: "Balanced", detail: "As light as Omarchy's own screensaver" },
@@ -178,7 +178,7 @@ Panel {
             RowText {
               Layout.fillWidth: true
               title: "Use as screensaver"
-              detail: "Replaces Omarchy's own screensaver"
+              detail: "Temporarily replaces Omarchy's screensaver"
             }
 
             ToggleSwitch {
