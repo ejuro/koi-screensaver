@@ -1,4 +1,4 @@
-module github.com/ejuro/koi-screensaver
+module github.com/erikrjohansson/koi-screensaver
 
 go 1.26
 

@@ -13,7 +13,7 @@ Two theme-coloured koi screensaver scenes for Omarchy. The Omarchy wordmark brea
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/ejuro/koi-screensaver.git --enable
+omarchy plugin add https://github.com/erikrjohansson/koi-screensaver.git --enable
 ```
 
 Koi temporarily replaces Omarchy's default screensaver while the plugin is enabled and **Use as screensaver** is on (the default). Turning that switch off or disabling/removing the plugin restores the default saver, unless you had disabled it yourself. **Locking and authentication remain Omarchy's responsibility.**
